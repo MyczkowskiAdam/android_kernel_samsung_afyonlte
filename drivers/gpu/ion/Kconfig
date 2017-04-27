@@ -1,0 +1,26 @@
+menuconfig ION
+	tristate "Ion Memory Manager"
+	select GENERIC_ALLOCATOR
+	select DMA_SHARED_BUFFER
+	help
+	  Chose this option to enable the ION Memory Manager.
+
+config ION_TEGRA
+	tristate "Ion for Tegra"
+	depends on ARCH_TEGRA && ION
+	help
+	  Choose this option if you wish to use ion on an nVidia Tegra.
+
+config ION_R_MOBILE
+        tristate "Ion for R-Mobile"
+        depends on ARCH_SHMOBILE && ION
+        help
+          Choose this option if you wish to use ion on Renesas R-Mobile.
+
+config ION_R_MOBILE_USE_VIDEO_HEAP
+	bool "Use video heap for secure contents"
+	depends on ION_R_MOBILE
+	default y
+	help
+	  Choose this option if you wish to use a video heap for secure
+	  contents on Renesas R-Mobile.

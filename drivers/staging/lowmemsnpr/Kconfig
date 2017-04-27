@@ -1,0 +1,43 @@
+config LOW_MEM_SNPR
+	bool "Low Memory Sniper"
+	default n
+	---help---
+	  Register processes to be killed when memory is low
+
+config LOW_MEM_SNPR_MIN_FREE_ZERO_BASE
+	bool "minimum number of free pages base size"
+	default n
+
+config LOW_MEM_SNPR_MIN_FREE_OFFSET
+	int "minimum number of free pages"
+	default  2048 if !LOW_MEM_SNPR_MIN_FREE_ZERO_BASE
+	default 16640 if LOW_MEM_SNPR_MIN_FREE_ZERO_BASE
+	---help---
+	  17920 pages 70MB
+	  16640 pages 65MB
+
+config LOW_MEM_SNPR_TIMEOUT
+	int "multiple of HZ (default 2 HZ)"
+	default 2
+
+config LOW_MEM_SNPR_DEFAULT
+	bool "Low Memory Sniper for added tasks"
+	default n
+	---help---
+	  Register processes to be killed when memory is low
+
+config LOW_MEM_SNPR_RTDS
+	bool "Low Memory Sniper for RTDS tasks"
+	default n
+	---help---
+	  Register processes to be killed when memory is low
+
+config LOW_MEM_SNPR_RTDS_SIZE
+	bool "Low Memory Sniper kill biggest RTDS task"
+	default n
+	---help---
+	  Low Memory Sniper kill biggest RTDS task
+
+config LOW_MEM_SNPR_LOG_SIGKILL
+	string 
+	default "sigkill"

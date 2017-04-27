@@ -1,0 +1,20 @@
+--v1.1.5 -- 2012/10/23
+--Maintenance Man : Patrick Chang <patrick_chang@richtek.com>
+Add support for RT9450B charger
+--v1.1.4 -- 2012/10/18
+--Maintenance Man : Patrick Chang <patrick_chang@richtek.com>
+Add support for RT9450 charger
+--v1.1.3 -- 2012/09/18
+--Maintenance Man : Patrick Chang <patrick_chang@richtek.com>
+Add support for RT9524 charger
+Add support for RT8973 muic
+--v1.1.2-- 2012/06/27
+--Maintenance Man : Patrick Chang <patrick_chang@richtek.com>
+Compatibility improve
+Add support for Dialog D2083 PMIC
+--v1.0.5-- 2012/04/15
+--Maintenance Man : Patrick Chang <patrick_chang@richtek.com>
+Move to "drivers/mfd/richtek"
+Compatibility improve
+Add RT9450 switch chargaer support
+

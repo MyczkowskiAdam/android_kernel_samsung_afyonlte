@@ -1,0 +1,23 @@
+#
+# Richtek programmable switch mode charger RT9450 drivers configuration
+#
+# Copyright (C) Richtek Corporation 2012
+# Patrick Chang <patrick_chang@richtek.com>
+
+config RT9450_CTRL
+    hex "Control Register Setting (Addr = 0x01)"
+    default "0xa8"
+    ---help---
+    TBD
+
+config RT9450_VOLTAGE
+    hex "Voltage Register Setting (Addr = 0x02)"
+    default "0x8e"
+    ---help---
+    TBD
+
+config RT9450_CURRENT
+    hex "Current Register Setting (Addr = 0x04)"
+    default "0x70"
+    ---help---
+    TBD

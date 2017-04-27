@@ -1,0 +1,6 @@
+#
+# PCM2PWM subsystem configuration
+#
+
+config PCM2PWM
+	bool "pcm2pwm support"

@@ -1,0 +1,70 @@
+config FB_SH_MOBILE_LCDC
+        tristate "SuperH Mobile LCDC framebuffer support"
+        depends on FB && (SUPERH || ARCH_SHMOBILE) && HAVE_CLK
+        select FB_SYS_FILLRECT
+        select FB_SYS_COPYAREA
+        select FB_SYS_IMAGEBLIT
+        select FB_SYS_FOPS
+        select FB_DEFERRED_IO
+        select FB_BACKLIGHT
+        select SH_MIPI_DSI if SH_LCD_MIPI_DSI
+        ---help---
+          Frame buffer driver for the on-chip SH-Mobile LCD controller.
+
+choice
+        depends on FB_SH_MOBILE_LCDC
+        prompt "LCD panel select"
+
+config FB_R_MOBILE_NT35510
+        boolean "NT35510 PANEL(COMMAND MODE)"
+
+config FB_R_MOBILE_VX5B3D
+        boolean "VX5B3D PANEL(VIDEO MODE)"
+
+config FB_R_MOBILE_HX8389B
+        boolean "HX8389B PANEL(VIDEO MODE)"
+
+endchoice
+
+choice
+        depends on FB_R_MOBILE_HX8389B || FB_R_MOBILE_NT35510
+        prompt "ESD detect method"
+        optional
+
+config FB_LCD_ESD
+        boolean "LCD ESD RECOVERY by interrupt"
+
+config LCD_ESD_RECOVERY_BY_CHECK_REG
+        boolean "LCD ESD RECOVERY by checking register"
+
+endchoice
+choice
+        depends on FB_SH_MOBILE_LCDC
+        prompt "hdmi select"
+        default FB_R_MOBILE_HDMI_KOTA
+        help
+          Selected hdmi
+
+config FB_R_MOBILE_HDMI_KOTA
+        boolean "KOTA HDMI"
+
+endchoice
+
+config LDI_MDNIE_SUPPORT
+	bool "LDI_MDNIE_SUPPORT"
+	help
+   	  LDI_MDNIE_SUPPORT
+
+config FB_SH_MOBILE_DOUBLE_BUF
+        bool "SuperH Mobile double buffer support"
+        depends on FB_SH_MOBILE_LCDC
+        default y
+        help
+          SuperH Mobile LCDC framebuffer support double buffer.
+
+config FB_SH_MOBILE_RGB888
+        bool "SuperH Mobile RGB888 support"
+        depends on FB_SH_MOBILE_LCDC
+        default n
+        help
+          SuperH Mobile LCDC framebuffer support RGB888.
