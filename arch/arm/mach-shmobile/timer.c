@@ -18,9 +18,11 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  *
  */
+#include <linux/clk.h>
+#include <linux/delay.h>
+#include <linux/err.h>
 #include <linux/platform_device.h>
 #include <asm/mach/time.h>
-#include <asm/smp_twd.h>
 
 static void __init shmobile_late_time_init(void)
 {
@@ -40,6 +42,26 @@ static void __init shmobile_late_time_init(void)
 void __init shmobile_earlytimer_init(void)
 {
 	late_time_init = shmobile_late_time_init;
+}
+
+void __init shmobile_calibrate_delay_early(void)
+{
+	struct clk *clkp;
+	unsigned long lpj;
+
+	/*
+	 * Calculate loops_per_jiffy using System-CPU frequency if it's
+	 * available, to avoid time-consuming boot-time auto-calibration.
+	 */
+	clkp = clk_get(NULL, "z_clk");
+	if (!IS_ERR(clkp)) {
+		lpj = clk_get_rate(clkp) + HZ/2;
+		do_div(lpj, HZ);
+		loops_per_jiffy = lpj_fine = lpj;
+		clk_put(clkp);
+		pr_info("Calibrating delay loop using CPU frequency "
+			"(lpj=%lu)\n", lpj);
+	}
 }
 
 static void __init shmobile_timer_init(void)

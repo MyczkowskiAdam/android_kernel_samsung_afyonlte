@@ -1,0 +1,355 @@
+----------------------------
+Copyright (c) Renesas Mobile Corporation 2013
+
+This README is provided 'as-is' base without any warranty.
+Please include this README with the other codes in this folder when you re-distribute the codes. 
+----------------------------
+####################### HW #################
+sysfs file: /sys/pmdbg/hw
+
+------------
+[*] Read register value
+- Write "rreg <register size (32, 16, 8)> <address (physical)>"
+  to HW sysfs file
+- Read data from HW sysfs file
+WARNING: Please make sure that memory range is accessibility
+Example:
+  # echo rreg 32 0xE6180000 > /sys/pmdbg/hw
+  # cat /sys/pmdbg/hw
+
+  # echo rreg 16 0xE6180000 > /sys/pmdbg/hw
+  # cat /sys/pmdbg/hw
+
+  # echo rreg 8 0xE6180000 > /sys/pmdbg/hw
+  # cat /sys/pmdbg/hw
+
+------------
+[*] Write value to register
+- Write "wreg <register size (32, 16, 8)> <address (physical)> <value>"
+  to HW sysfs file
+- Read data from HW sysfs file
+WARNING: Please make sure that memory range is accessibility
+Example:
+  # echo wreg 32 0xE6180000 0x00EEFFFF> /sys/pmdbg/hw
+  # cat /sys/pmdbg/hw
+
+  # echo wreg 16 0xE6180000 0xEEFF > /sys/pmdbg/hw
+  # cat /sys/pmdbg/hw
+
+  # echo wreg 8 0xE6180000 0xEF > /sys/pmdbg/hw
+  # cat /sys/pmdbg/hw
+
+------------
+[*] Modify value to register
+- Write "mreg <register size (32, 16, 8)> <address (physical)>
+              <mask set> <mask clear>"
+  to HW sysfs file
+- Read data from HW sysfs file
+WARNING: Please make sure that memory range is accessibility
+Example:
+  # echo mreg 32 0xE6180000 0x00EEFFFF 0 > /sys/pmdbg/hw
+  # cat /sys/pmdbg/hw
+
+  # echo mreg 16 0xE6180000 0 0xEEFF > /sys/pmdbg/hw
+  # cat /sys/pmdbg/hw
+
+  # echo mreg 8 0xE6180000 0xFF 0 > /sys/pmdbg/hw
+  # cat /sys/pmdbg/hw
+
+####################### CPG #################
+sysfs file: /sys/pmdbg/cpg
+
+------------
+[*] Read value of CPG register
+- Read data from CPG sysfs file
+Example:
+  # cat /sys/pmdbg/cpg
+  FRQCRA (0xe6150000): 0x334530
+  FRQCRB (0xe6150004): 0x12231350
+  ....
+
+####################### SYSC #################
+sysfs file: /sys/pmdbg/sysc
+
+------------
+[*] Read value of SYSC register
+- Read data from SYSC sysfs file
+Example:
+  # cat /sys/pmdbg/sysc
+  SBAR (0xe6180020): 0xe63a2000
+  PSTR (0xe6180080): 0x7bf0f3
+  ....
+
+####################### PDC #################
+sysfs file: /sys/pmdbg/pdc
+
+------------
+[*] Display power area's status
+- Write "lst pa" to PDC sysfs file
+- Read data from PDC sysfs file
+Example:
+  # echo lst pa > /sys/pmdbg/pdc
+  # cat /sys/pmdbg/pdc
+  PSTR(0xe6180080) = 0x007bf0f3
+  A3SG = OFF
+  A3SP = ON
+  A3R = ON
+  A4RM = ON
+  A4MP = OFF
+
+
+####################### DFS #################
+sysfs file: /sys/pmdbg/dfs
+
+------------
+[*] Start DFS
+- Write "start" to DFS sysfs file
+Example:
+  # echo start > /sys/pmdbg/dfs
+
+------------
+[*] Stop DFS (frequency is set to max value)
+- Write "stop" to DFS sysfs file
+Example:
+  # echo stop > /sys/pmdbg/dfs
+
+------------
+[*] Enable DFS
+- Write "en" to DFS sysfs file
+Example:
+  # echo en > /sys/pmdbg/dfs
+
+------------
+[*] Disable DFS (keep current frequency)
+- Write "dis" to DFS sysfs file
+Example:
+  # echo dis > /sys/pmdbg/dfs
+
+------------
+[*] Display current frequency of system clock
+- Write "clk_get all" to DFS sysfs file
+- Read data from DFS sysfs file
+Example:
+  # echo clk_get all > /sys/pmdbg/dfs
+  # cat /sys/pmdbg/dfs
+
+------------
+[*] Display current frequency of CPU clock
+- Write "clk_get cpu" to DFS sysfs file
+- Read data from DFS sysfs file
+Example:
+  # echo clk_get cpu > /sys/pmdbg/dfs
+  # cat /sys/pmdbg/dfs
+
+------------
+[*] Start monitor frequency change
+- Write "mon start" to DFS sysfs file
+Example:
+  # echo mon start > /sys/pmdbg/dfs
+
+------------
+[*] Get frequency change information
+- Write "mon get" to DFS sysfs file
+- Read data from DFS sysfs file (10 latest changing times)
+- Or Read information by using dmesg, information will be displayed as
+  [<time> us] CPU <id>: from <freq> KHz to <freq> KHz
+Example:
+  # echo mon get > /sys/pmdbg/dfs
+  # cat /sys/pmdbg/dfs
+  Console display:
+  CPU 0: from 988000 KHz -> to: 494000 KHz at   2959702905 us
+
+------------
+[*] Stop monitor frequency change
+- Write "mon stop" to DFS sysfs file
+Example:
+  # echo mon stop > /sys/pmdbg/dfs
+
+------------
+[*] Suppress to low frequency
+- Write "sup min" to DFS sysfs file
+Example:
+  # echo sup min > /sys/pmdbg/dfs
+
+------------
+[*] Cancel suppression to low frequency
+- Write "sup no" to DFS sysfs file
+Example:
+  # echo sup no > /sys/pmdbg/dfs
+
+####################### Idle #################
+sysfs file: /sys/pmdbg/idle
+
+------------
+[*] Start monitor Idle state transition
+- Write "mon start" to Idle sysfs file
+  (log will not display to console)
+Example:
+  # echo mon start > /sys/pmdbg/idle
+
+------------
+[*] Start monitor Idle state transition all time
+- Write "mon all" to Idle sysfs file
+  (log will be displayed to console any time state is change)
+Example:
+  # echo mon all > /sys/pmdbg/idle
+
+------------
+[*] Get Idle state transition information
+- Write "mon get" to Idle sysfs file
+- Read data from Idle sysfs file (10 latest changing times)
+Example:
+  # echo mon get > /sys/pmdbg/idle
+  # cat /sys/pmdbg/idle
+  [  3963643857] CoreStandby in         5621 us (Actived)
+
+------------
+[*] Stop monitor Idle state transition
+- Write "mon stop" to Idle sysfs file
+Example:
+  # echo mon stop > /sys/pmdbg/idle
+
+
+------------
+[*] Suppress to CoreStandby state transition
+- Write "sup" to Idle sysfs file
+Example:
+  # echo sup > /sys/pmdbg/idle
+
+------------
+[*] Cancel suppression to CoreStandby state transition
+- Write "sup no" to Idle sysfs file
+Example:
+  # echo sup no > /sys/pmdbg/idle
+
+------------
+[*] Display active idle wakelock to console
+- Enable debug log of wakelock
+- Write "wakelock" to Idle sysfs file
+
+Example:
+  # echo 31 > /sys/module/wakelock/parameters/debug_mask
+  # echo wakelock > /sys/pmdbg/idle
+
+
+####################### Suspend #################
+sysfs file: /sys/pmdbg/suspend
+
+------------
+[*] Request suspend state (ignore early suspend)
+- Write "suspend" to Suspend sysfs file
+Example:
+  # echo suspend > /sys/pmdbg/suspend
+------------
+[*] Request suspend state (ignore early suspend, wakelock)
+- Write "suspend force" to Suspend sysfs file
+Example:
+  # echo suspend force > /sys/pmdbg/suspend
+------------
+[*] Display active suspend wakelock to console
+- Enable debug log of wakelock
+- Write "wakelock" to Suspend sysfs file
+Example:
+  # echo 31 > /sys/module/wakelock/parameters/debug_mask
+  # echo wakelock > /sys/pmdbg/suspend
+------------
+[*] Enable dump suspend log
+- Write "enable_dump_suspend" to Idle sysfs file
+Example:
+  # echo enable_dump_suspend > /sys/pmdbg/suspend
+
+------------
+[*] Disable dump suspend log
+- Write "disable_dump_suspend" to Idle sysfs file
+Example:
+  # echo disable_dump_suspend > /sys/pmdbg/suspend
+
+------------
+####################### Memory #################
+sysfs file: /sys/pmdbg/mem
+
+------------
+[*] Defrag main memory
+- Write "defrag" to mem sysfs file
+Example:
+  # echo defrag > /sys/pmdbg/mem
+------------
+[*] Get RAM bank's status
+- Write "bank" to mem sysfs file
+- Read data from mem sysfs file
+Example:
+  # echo bank > /sys/pmdbg/mem
+  # cat /sys/pmdbg/mem
+
+------------
+[*] Dump memory
+- Write "dump <v/p> <address (in hex)> <length>" to mem sysfs file
+  + v: Address is virtual address
+  + p: Address is physical address
+- Information will be displayed in console
+WARNING: Please make sure that memory range is accessibility
+Example:
+  # echo dump v 0xc000913c 512 > /sys/pmdbg/mem
+  # echo dump p 0x4000913c 512 > /sys/pmdbg/mem
+
+####################### Debug pin #################
+sysfs file: /sys/pmdbg/dbgpin
+
+------------
+[*] Start monitoring
+- Write "mon <type>" to Debug pin sysfs file
+  Type:
+  + pa: Power area status monitoring
+  + cpu: CPU sleep mode monitoring
+  + clk: Clock monitoring
+Example:
+  # echo mon pa > /sys/pmdbg/dbgpin
+  # echo mon cpu > /sys/pmdbg/dbgpin
+  # echo mon clk > /sys/pmdbg/dbgpin
+------------
+[*] Get current monitor type
+- Write "mon get" to Debug pin  sysfs file
+- Read data from Debug pin  sysfs file
+Example:
+  # echo mon get > /sys/pmdbg/dbgpin
+  # cat /sys/pmdbg/dbgpin
+  Monitor type: Power area status
+------------
+[*] Stop monitoring
+- Write "mon no" to Debug pin sysfs file
+Example:
+  # echo mon no > /sys/pmdbg/dbgpin
+------------
+[*] Change monitor output pin
+- Write "monpin <pin>" to Debug pin sysfs file
+  pin:
+  + key: status is output to KEY pins
+  + bsc: status is output to BSC pins
+Example:
+  # echo monpin key > /sys/pmdbg/dbgpin
+------------
+[*] Get current monitor output pin
+- Write "monpin get" to Debug pin sysfs file
+- Read data from Debug pin sysfs file
+Example:
+  # echo monpin get > /sys/pmdbg/dbgpin
+  # cat /sys/pmdbg/dbgpin
+  Monitor pin: KEY
+
+####################### CPU #################
+sysfs file: /sys/pmdbg/cpu
+
+------------
+[*] Enable cpu profile log
+- Write "enable_cpu_profile" to Idle sysfs file
+- Get started in "MON_WAIT_TIME" mseconds
+Example:
+  # echo enable_cpu_profile > /sys/pmdbg/cpu
+
+------------
+[*] Disable cpu profile log
+- Write "disable_cpu_profile" to Idle sysfs file
+Example:
+  # echo disable_cpu_profile > /sys/pmdbg/cpu
+
+------------

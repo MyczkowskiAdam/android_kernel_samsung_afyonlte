@@ -1,0 +1,38 @@
+#
+# R_MOBILE config for  composer
+#
+#    support graphics image blending
+#
+
+config MISC_R_MOBILE_COMPOSER
+	tristate "R-Mobile composer support"
+	default y
+	depends on MISC_R_MOBILE_COMPOSER_APPMEM_SHAREMANGER
+	---help---
+	  If Y is used, support of composer becomes effective.
+	  and MISC_R_MOBILE_COMPOSER_APPMEM_SHAREMANGER is necessary.
+	  Note:
+	  This module can't modularize because there is unsolved dependence.
+
+if MISC_R_MOBILE_COMPOSER
+config MISC_R_MOBILE_COMPOSER_REQUEST_QUEUE
+	bool "R-Mobile composer request queue support"
+	depends on MISC_R_MOBILE_COMPOSER
+	default y
+	---help---
+	  If Y is used, support of request queue interface becomes effective.
+	  Note:
+	  MISC_R_MOBILE_COMPOSER is necessary to enable this function.
+endif
+
+config MISC_R_MOBILE_COMPOSER_APPMEM_SHAREMANGER
+	bool "R-Mobile APPMEM share manager"
+	default y
+	---help---
+	  If Y is used, the function to share a APPMEM between kernel driver,
+	  becomes effective.
+	  Note:
+	  This module can't modularize because there is unsolved dependence.
+	  This function used MISC_R_MOBILE_COMPOSER or
+	  VIDEO_R_MOBILE_V4L2OVERLAY.
+

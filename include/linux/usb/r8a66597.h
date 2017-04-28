@@ -2,6 +2,7 @@
  * R8A66597 driver platform data
  *
  * Copyright (C) 2009  Renesas Solutions Corp.
+ * Copyright (C) 2012 Renesas Mobile Corporation
  *
  * Author : Yoshihiro Shimoda <yoshihiro.shimoda.uh@renesas.com>
  *
@@ -31,8 +32,27 @@ struct r8a66597_platdata {
 	/* This callback can control port power instead of DVSTCTR register. */
 	void (*port_power)(int port, int power);
 
-	/* This parameter is for BUSWAIT */
+	/* For gadget: This callback can get the configured power */
+	void (*vbus_power)(int ma);
+
+	/* used to check VBUS power supply (at r8a66597 controller end) */
+	int (*is_vbus_powered)(void);
+
+	/* platform-specific module start/stop operations */
+	void (*module_start)(void);
+	void (*module_stop)(void);
+
+	/* supplement clock maintenance (or NULL, if it's not used) */
+	void (*clk_enable)(int enable);
+
+	/* the number of access waits from CPU to this module */
 	u16		buswait;
+
+	/* the maximum number of the FIFO buffer allowed */
+	u16		max_bufnum;
+
+	/* interrupt number for VBUS change IRQ (or zero, if it's not used) */
+	int		vbus_irq;
 
 	/* set one = on chip controller, set zero = external controller */
 	unsigned	on_chip:1;
@@ -49,8 +69,12 @@ struct r8a66597_platdata {
 	/* (external controller only) set one = WR0_N shorted to WR1_N */
 	unsigned	wr0_shorted_to_wr1:1;
 
-	/* set one = using SUDMAC */
-	unsigned	sudmac:1;
+	/* set one = using USBHS-DMAC */
+	unsigned	dmac:1;
+
+	/* Gpio setting */
+	unsigned int	port_cnt;
+	struct portn_gpio_setting_info  *usb_gpio_setting_info;
 };
 
 /* Register definitions */
@@ -111,6 +135,12 @@ struct r8a66597_platdata {
 #define PIPE7CTR	0x7C
 #define PIPE8CTR	0x7E
 #define PIPE9CTR	0x80
+#define PIPEACTR	0x82
+#define PIPEBCTR	0x84
+#define PIPECCTR	0x86
+#define PIPEDCTR	0x88
+#define PIPEECTR	0x8A
+#define PIPEFCTR	0x8C
 #define PIPE1TRE	0x90
 #define PIPE1TRN	0x92
 #define PIPE2TRE	0x94
@@ -118,9 +148,23 @@ struct r8a66597_platdata {
 #define PIPE3TRE	0x98
 #define PIPE3TRN	0x9A
 #define PIPE4TRE	0x9C
-#define	PIPE4TRN	0x9E
-#define	PIPE5TRE	0xA0
-#define	PIPE5TRN	0xA2
+#define PIPE4TRN	0x9E
+#define PIPE5TRE	0xA0
+#define PIPE5TRN	0xA2
+#define PIPEBTRE	0xA4
+#define PIPEBTRN	0xA6
+#define PIPECTRE	0xA8
+#define PIPECTRN	0xAA
+#define PIPEDTRE	0xAC
+#define PIPEDTRN	0xAE
+#define PIPEETRE	0xB0
+#define PIPEETRN	0xB2
+#define PIPEFTRE	0xB4
+#define PIPEFTRN	0xB6
+#define PIPE9TRE	0xB8
+#define PIPE9TRN	0xBA
+#define PIPEATRE	0xBC
+#define PIPEATRN	0xBE
 #define DEVADD0		0xD0
 #define DEVADD1		0xD2
 #define DEVADD2		0xD4
@@ -132,6 +176,10 @@ struct r8a66597_platdata {
 #define DEVADD8		0xE0
 #define DEVADD9		0xE2
 #define DEVADDA		0xE4
+#define D2FIFOSEL	0xF0
+#define D2FIFOCTR	0xF2
+#define D3FIFOSEL	0xF4
+#define D3FIFOCTR	0xF6
 
 /* System Configuration Control Register */
 #define	XTAL		0xC000	/* b15-14: Crystal selection */
@@ -478,4 +526,3 @@ struct r8a66597_platdata {
 #define CH0ENDC		0x0001 /* b1: Ch0 DMA Transfer End Int Stat Clear */
 
 #endif /* __LINUX_USB_R8A66597_H */
-

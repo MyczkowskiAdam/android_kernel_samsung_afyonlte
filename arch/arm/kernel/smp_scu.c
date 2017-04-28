@@ -52,8 +52,16 @@ void scu_enable(void __iomem *scu_base)
 	if (scu_ctrl & 1)
 		return;
 
+#ifdef CONFIG_SCU_IC_STANDBY
+	scu_ctrl |= 1 << 6;
+#endif
+#ifdef CONFIG_SCU_STANDBY
+	scu_ctrl |= 1 << 5;
+#endif
 	scu_ctrl |= 1;
 	__raw_writel(scu_ctrl, scu_base + SCU_CTRL);
+
+	pr_info("SCU enabled (CTRL 0x%08x)\n", scu_ctrl);
 
 	/*
 	 * Ensure that the data accessed by CPU0 before the SCU was

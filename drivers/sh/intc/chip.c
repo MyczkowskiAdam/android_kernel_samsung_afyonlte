@@ -27,7 +27,7 @@ void _intc_enable(struct irq_data *data, unsigned long handle)
 #endif
 		addr = INTC_REG(d, _INTC_ADDR_E(handle), cpu);
 		intc_enable_fns[_INTC_MODE(handle)](addr, handle, intc_reg_fns\
-						    [_INTC_FN(handle)], irq);
+					[_INTC_FN(handle)], irq, &d->lock);
 	}
 
 	intc_balancing_enable(irq);
@@ -55,8 +55,18 @@ static void intc_disable(struct irq_data *data)
 #endif
 		addr = INTC_REG(d, _INTC_ADDR_D(handle), cpu);
 		intc_disable_fns[_INTC_MODE(handle)](addr, handle,intc_reg_fns\
-						     [_INTC_FN(handle)], irq);
+					[_INTC_FN(handle)], irq, &d->lock);
 	}
+}
+
+static int intc_set_wake(struct irq_data *data, unsigned int on)
+{
+	struct intc_desc_int *d = get_intc_desc(data->irq);
+
+	if (d->set_wake)
+		return d->set_wake(data, on);
+
+	return 0; /* allow wakeup, but setup hardware in intc_suspend() */
 }
 
 #ifdef CONFIG_SMP
@@ -78,14 +88,12 @@ static int intc_set_affinity(struct irq_data *data,
 }
 #endif
 
-static void intc_mask_ack(struct irq_data *data)
+static void intc_ack(struct irq_data *data)
 {
 	unsigned int irq = data->irq;
 	struct intc_desc_int *d = get_intc_desc(irq);
 	unsigned long handle = intc_get_ack_handle(irq);
 	unsigned long addr;
-
-	intc_disable(data);
 
 	/* read register and write zero only to the associated bit */
 	if (handle) {
@@ -112,6 +120,12 @@ static void intc_mask_ack(struct irq_data *data)
 			break;
 		}
 	}
+}
+
+static void intc_mask_ack(struct irq_data *data)
+{
+	intc_disable(data);
+	intc_ack(data);
 }
 
 static struct intc_handle_int *intc_find_irq(struct intc_handle_int *hp,
@@ -178,6 +192,7 @@ static int intc_set_type(struct irq_data *data, unsigned int type)
 	unsigned char value = intc_irq_sense_table[type & IRQ_TYPE_SENSE_MASK];
 	struct intc_handle_int *ihp;
 	unsigned long addr;
+	struct irq_chip *chip;
 
 	if (!value)
 		return -EINVAL;
@@ -191,8 +206,21 @@ static int intc_set_type(struct irq_data *data, unsigned int type)
 			return -EINVAL;
 
 		addr = INTC_REG(d, _INTC_ADDR_E(ihp->handle), 0);
-		intc_reg_fns[_INTC_FN(ihp->handle)](addr, ihp->handle, value);
+		intc_reg_fns[_INTC_FN(ihp->handle)](addr, ihp->handle, value, &d->lock);
+
+		chip = irq_get_chip(data->irq);
+		if (type & (IRQ_TYPE_EDGE_FALLING | IRQ_TYPE_EDGE_RISING)) {
+			__irq_set_chip_handler_name_locked(
+				data->irq, chip, handle_edge_irq, "edge");
+		} else if (type & (IRQ_TYPE_LEVEL_LOW | IRQ_TYPE_LEVEL_HIGH)) {
+			__irq_set_chip_handler_name_locked(
+				data->irq, chip, handle_level_irq, "level");
+		}
 	}
+
+	if (d->set_type)
+		/* TODO: intentionally ignore the return value for now */
+		d->set_type(data, type);
 
 	return 0;
 }
@@ -200,12 +228,13 @@ static int intc_set_type(struct irq_data *data, unsigned int type)
 struct irq_chip intc_irq_chip	= {
 	.irq_mask		= intc_disable,
 	.irq_unmask		= intc_enable,
+	.irq_ack		= intc_ack,
 	.irq_mask_ack		= intc_mask_ack,
 	.irq_enable		= intc_enable,
 	.irq_disable		= intc_disable,
 	.irq_set_type		= intc_set_type,
+	.irq_set_wake		= intc_set_wake,
 #ifdef CONFIG_SMP
 	.irq_set_affinity	= intc_set_affinity,
 #endif
-	.flags			= IRQCHIP_SKIP_SET_WAKE,
 };

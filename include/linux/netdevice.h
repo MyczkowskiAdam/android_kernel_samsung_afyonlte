@@ -1059,6 +1059,8 @@ struct net_device {
 	/* mask of features inheritable by VLAN devices */
 	netdev_features_t	vlan_features;
 
+#define NETIF_F_NO_CSUM		4	/* Does not require checksum. F.e. loopack. */
+
 	/* Interface index. Unique device identifier	*/
 	int			ifindex;
 	int			iflink;

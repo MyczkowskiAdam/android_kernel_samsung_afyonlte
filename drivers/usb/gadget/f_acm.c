@@ -18,6 +18,8 @@
 #include <linux/kernel.h>
 #include <linux/device.h>
 
+#include <linux/usb/gadget_cust.h>
+
 #include "u_serial.h"
 #include "gadget_chips.h"
 
@@ -98,7 +100,7 @@ acm_iad_descriptor = {
 	.bDescriptorType =	USB_DT_INTERFACE_ASSOCIATION,
 
 	/* .bFirstInterface =	DYNAMIC, */
-	.bInterfaceCount = 	2,	// control + data
+	.bInterfaceCount =	2,   /*  control + data */
 	.bFunctionClass =	USB_CLASS_COMM,
 	.bFunctionSubClass =	USB_CDC_SUBCLASS_ACM,
 	.bFunctionProtocol =	USB_CDC_ACM_PROTO_AT_V25TER,
@@ -124,7 +126,7 @@ static struct usb_interface_descriptor acm_data_interface_desc = {
 	.bNumEndpoints =	2,
 	.bInterfaceClass =	USB_CLASS_CDC_DATA,
 	.bInterfaceSubClass =	0,
-	.bInterfaceProtocol =	0,
+	.bInterfaceProtocol =	0xff,
 	/* .iInterface = DYNAMIC */
 };
 
@@ -572,6 +574,8 @@ static void acm_connect(struct gserial *port)
 {
 	struct f_acm		*acm = port_to_acm(port);
 
+	NPRINTK("\n");
+
 	acm->serial_state |= ACM_CTRL_DSR | ACM_CTRL_DCD;
 	acm_notify_serial_state(acm);
 }
@@ -580,6 +584,7 @@ static void acm_disconnect(struct gserial *port)
 {
 	struct f_acm		*acm = port_to_acm(port);
 
+        NPRINTK("\n");
 	acm->serial_state &= ~(ACM_CTRL_DSR | ACM_CTRL_DCD);
 	acm_notify_serial_state(acm);
 }
@@ -784,6 +789,10 @@ int acm_bind_config(struct usb_configuration *c, u8 port_num)
 
 		acm_iad_descriptor.iFunction = status;
 	}
+	if (port_num == 0) /* make the first ACM instance as a modem device */
+		acm_data_interface_desc.bInterfaceProtocol = 0x00;
+	else if (port_num == 1) /* make the second ACM instance as a serial comm. device */
+		acm_data_interface_desc.bInterfaceProtocol = 0xFF;
 
 	/* allocate and initialize one new instance */
 	acm = kzalloc(sizeof *acm, GFP_KERNEL);

@@ -7,6 +7,10 @@
 #include <asm/sections.h>
 #include <asm/system_info.h>
 
+#ifdef CONFIG_ARCH_SHMOBILE
+#include <mach/r8a7373.h>
+#endif
+
 pgd_t *idmap_pgd;
 
 #ifdef CONFIG_ARM_LPAE
@@ -91,6 +95,17 @@ static int __init init_static_idmap(void)
 	pr_info("Setting up static identity map for 0x%llx - 0x%llx\n",
 		(long long)idmap_start, (long long)idmap_end);
 	identity_mapping_add(idmap_pgd, idmap_start, idmap_end);
+
+#ifdef CONFIG_ARCH_SHMOBILE
+	/* Add an identity mapping for the physical address of RAM0. */
+	/* XXX why does the PM code that this is for even run in RAM0? */
+	idmap_start = RAM0_BASE_PHYS;
+	idmap_end = RAM0_BASE_PHYS + RAM0_SIZE;
+
+	pr_info("Setting up static identity map for 0x%llx - 0x%llx\n",
+		(long long)idmap_start, (long long)idmap_end);
+	identity_mapping_add(idmap_pgd, idmap_start, idmap_end);
+#endif
 
 	return 0;
 }

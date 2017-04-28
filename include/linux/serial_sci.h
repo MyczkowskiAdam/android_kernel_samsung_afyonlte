@@ -15,6 +15,7 @@ enum {
 	SCBRR_ALGO_2,		/* ((clk + 16 * bps) / (32 * bps) - 1) */
 	SCBRR_ALGO_3,		/* (((clk * 2) + 16 * bps) / (16 * bps) - 1) */
 	SCBRR_ALGO_4,		/* (((clk * 2) + 16 * bps) / (32 * bps) - 1) */
+	SCBRR_ALGO_4_BIS,	/* (((clk * 2) + 13 * bps) / (26 * bps) - 1) */
 	SCBRR_ALGO_5,		/* (((clk * 1000 / 32) / bps) - 1) */
 };
 
@@ -52,6 +53,8 @@ enum {
 /* SCSPTR, optional */
 #define SCSPTR_RTSIO	(1 << 7)
 #define SCSPTR_CTSIO	(1 << 5)
+#define SCSPTR_SPB2IO	(1 << 1)
+#define SCSPTR_SPB2DT	(1 << 0)
 
 /* Offsets into the sci_port->irqs array */
 enum {
@@ -113,7 +116,7 @@ enum {
 	SCSMR, SCBRR, SCSCR, SCxSR,
 	SCFCR, SCFDR, SCxTDR, SCxRDR,
 	SCLSR, SCTFDR, SCRFDR, SCSPTR,
-
+	SCPCR, SCPDR,
 	SCIx_NR_REGS,
 };
 
@@ -156,6 +159,14 @@ struct plat_sci_port {
 
 	unsigned int	dma_slave_tx;
 	unsigned int	dma_slave_rx;
+	/* Call Back for Low Power Mode support */
+	void		(*exit_lpm_cb)(struct uart_port *uport);
+	/* Set to 0 = Set RTS to low
+	in UART port initialization */
+	bool		rts_ctrl;
+	/* GPIO setting */
+	u32				port_count ;
+	struct portn_gpio_setting_info	*scif_gpio_setting_info;
 };
 
 #endif /* __LINUX_SERIAL_SCI_H */

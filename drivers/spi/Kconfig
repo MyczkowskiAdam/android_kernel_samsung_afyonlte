@@ -318,7 +318,7 @@ config SPI_S3C64XX
 
 config SPI_SH_MSIOF
 	tristate "SuperH MSIOF SPI controller"
-	depends on SUPERH && HAVE_CLK
+	depends on (SUPERH || ARCH_SHMOBILE) && HAVE_CLK
 	select SPI_BITBANG
 	help
 	  SPI driver for SuperH MSIOF blocks.

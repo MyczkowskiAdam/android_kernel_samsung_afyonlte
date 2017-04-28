@@ -100,6 +100,8 @@ source "drivers/staging/xgifb/Kconfig"
 
 source "drivers/staging/tidspbridge/Kconfig"
 
+source "drivers/staging/ti-st/Kconfig"
+
 source "drivers/staging/quickstart/Kconfig"
 
 source "drivers/staging/sbe-2t3e3/Kconfig"
@@ -131,5 +133,7 @@ source "drivers/staging/telephony/Kconfig"
 source "drivers/staging/ramster/Kconfig"
 
 source "drivers/staging/ozwpan/Kconfig"
+
+source "drivers/staging/lowmemsnpr/Kconfig"
 
 endif # STAGING

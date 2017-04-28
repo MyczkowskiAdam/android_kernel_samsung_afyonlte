@@ -22,6 +22,7 @@
 #include <linux/bitmap.h>
 #include <linux/pm_runtime.h>
 #include <linux/io.h>
+#include <linux/clk.h>
 #include <linux/slab.h>
 
 static const struct {
@@ -37,6 +38,7 @@ static const struct {
 
 struct sh_keysc_priv {
 	void __iomem *iomem_base;
+	struct clk *clk;
 	DECLARE_BITMAP(last_keys, SH_KEYSC_MAXKEYS);
 	struct input_dev *input;
 	struct sh_keysc_info pdata;
@@ -50,15 +52,57 @@ struct sh_keysc_priv {
 #define KYCR2_IRQ_LEVEL    0x10
 #define KYCR2_IRQ_DISABLED 0x00
 
+#define A_KYCR1		4
+#define A_KYCR2		5
+#define A_KYCR4		7
+#define A_KYCR6		9
+#define A_KYIR		12
+#define A_KYSR		13
+#define A_KYINDR	14
+#define A_KYOUTDR	15
+#define A_KYSCDRL	16
+#define A_KYSCDRH	17
+#define A_KYSCDNUM	24
+
+#define A_KYCR1_KEYEXT		(1 << 15)
+#define A_KYCR1_MASKVALUE	(1 << 4)
+#define A_KYCR1_MASKVALUE2	(1 << 3)
+
+#define A_KYIR_STBCSL	(1 << 20)
+#define A_KYIR_FIFONE	(1 << 4)
+#define A_KYIR_KYALR	(1 << 3)
+#define A_KYIR_KYCHG	(1 << 2)
+#define A_KYIR_KYDET	(1 << 0)
+
+#define A_KYCR4_AUTOLPC	(1 << 2)
+#define A_KYCR4_AUTOKS	(1 << 0)
+
 static unsigned long sh_keysc_read(struct sh_keysc_priv *p, int reg_nr)
 {
-	return ioread16(p->iomem_base + (reg_nr << 2));
+	switch (reg_nr) {
+	case A_KYIR:
+	case A_KYSR:
+	case A_KYSCDRL:
+	case A_KYSCDRH:
+	case A_KYSCDNUM:
+		return readl_relaxed(p->iomem_base + (reg_nr << 2));
+	}
+	return readw_relaxed(p->iomem_base + (reg_nr << 2));
 }
 
 static void sh_keysc_write(struct sh_keysc_priv *p, int reg_nr,
 			   unsigned long value)
 {
-	iowrite16(value, p->iomem_base + (reg_nr << 2));
+	switch (reg_nr) {
+	case A_KYIR:
+	case A_KYSR:
+	case A_KYSCDRL:
+	case A_KYSCDRH:
+	case A_KYSCDNUM:
+		writel_relaxed(value, p->iomem_base + (reg_nr << 2));
+		return;
+	}
+	writew_relaxed(value, p->iomem_base + (reg_nr << 2));
 }
 
 static void sh_keysc_level_mode(struct sh_keysc_priv *p,
@@ -68,6 +112,7 @@ static void sh_keysc_level_mode(struct sh_keysc_priv *p,
 
 	sh_keysc_write(p, KYOUTDR, 0);
 	sh_keysc_write(p, KYCR2, KYCR2_IRQ_LEVEL | (keys_set << 8));
+	sh_keysc_read(p, KYCR2); /* defeat write posting */
 
 	if (pdata->kycr2_delay)
 		udelay(pdata->kycr2_delay);
@@ -94,45 +139,77 @@ static irqreturn_t sh_keysc_isr(int irq, void *dev_id)
 	DECLARE_BITMAP(keys1, SH_KEYSC_MAXKEYS);
 	unsigned char keyin_set, tmp;
 	int i, k, n;
+	unsigned long drl, drh;
 
-	dev_dbg(&pdev->dev, "isr!\n");
+	unsigned long drl, drh, num;
 
 	bitmap_fill(keys1, SH_KEYSC_MAXKEYS);
 	bitmap_zero(keys0, SH_KEYSC_MAXKEYS);
 
-	do {
-		bitmap_zero(keys, SH_KEYSC_MAXKEYS);
-		keyin_set = 0;
+	if (pdata->automode) {
+		while ((num = sh_keysc_read(priv, A_KYSCDNUM))) {
+			bitmap_zero(keys, SH_KEYSC_MAXKEYS);
 
-		sh_keysc_write(priv, KYCR2, KYCR2_IRQ_DISABLED);
-
-		for (i = 0; i < keyout_nr; i++) {
-			n = keyin_nr * i;
-
-			/* drive one KEYOUT pin low, read KEYIN pins */
-			sh_keysc_write(priv, KYOUTDR, 0xffff ^ (3 << (i * 2)));
-			udelay(pdata->delay);
-			tmp = sh_keysc_read(priv, KYINDR);
-
-			/* set bit if key press has been detected */
-			for (k = 0; k < keyin_nr; k++) {
-				if (tmp & (1 << k))
-					__set_bit(n + k, keys);
+			if ((pdata->flags & WA_EOS_E132_KEYSC) && num == 1) {
+				int val = sh_keysc_read(priv, 11);
+				if (val == 0x36 || val == 0x3b)
+					usleep_range(40, 100);
 			}
+			drl = sh_keysc_read(priv, A_KYSCDRL);
+			drh = sh_keysc_read(priv, A_KYSCDRH);
 
-			/* keep track of which KEYIN bits that have been set */
-			keyin_set |= tmp ^ ((1 << keyin_nr) - 1);
+			for (i = 0; i < keyout_nr; i++) {
+				n = keyin_nr * i;
+				tmp = (i < 4) ? (drl >> (i * 8)) :
+						(drh >> ((i-4) * 8));
+
+				/* set bit if key press has been detected */
+				for (k = 0; k < keyin_nr; k++) {
+					if (tmp & (1 << k))
+						__set_bit(n + k, keys);
+				}
+			}
+			bitmap_and(keys1, keys1, keys, SH_KEYSC_MAXKEYS);
+			bitmap_or(keys0, keys0, keys, SH_KEYSC_MAXKEYS);
 		}
 
-		sh_keysc_level_mode(priv, keyin_set);
+		}else{
+
+
+		do {
+			bitmap_zero(keys, SH_KEYSC_MAXKEYS);
+			keyin_set = 0;
+
+			sh_keysc_write(priv, KYCR2, KYCR2_IRQ_DISABLED);
+
+			for (i = 0; i < keyout_nr; i++) {
+				n = keyin_nr * i;
+
+				/* drive one KEYOUT pin low, read KEYIN pins */
+				sh_keysc_write(priv, KYOUTDR, 0xffff ^ (3 << (i * 2)));
+				udelay(pdata->delay);
+				tmp = sh_keysc_read(priv, KYINDR);
+
+				/* set bit if key press has been detected */
+				for (k = 0; k < keyin_nr; k++) {
+					if (tmp & (1 << k))
+						__set_bit(n + k, keys);
+				}
+
+				/* keep track of which KEYIN bits that have been set */
+				keyin_set |= tmp ^ ((1 << keyin_nr) - 1);
+			}
+			sh_keysc_write(priv, KYOUTDR, 0);
+			sh_keysc_level_mode(priv, keyin_set);
+
+			sh_keysc_map_dbg(&pdev->dev, keys, "keys");
 
 		bitmap_complement(keys, keys, SH_KEYSC_MAXKEYS);
 		bitmap_and(keys1, keys1, keys, SH_KEYSC_MAXKEYS);
 		bitmap_or(keys0, keys0, keys, SH_KEYSC_MAXKEYS);
 
-		sh_keysc_map_dbg(&pdev->dev, keys, "keys");
-
-	} while (sh_keysc_read(priv, KYCR2) & 0x01);
+		} while (sh_keysc_read(priv, KYCR2) & 0x01);
+	}
 
 	sh_keysc_map_dbg(&pdev->dev, priv->last_keys, "last_keys");
 	sh_keysc_map_dbg(&pdev->dev, keys0, "keys0");
@@ -170,6 +247,7 @@ static int __devinit sh_keysc_probe(struct platform_device *pdev)
 	struct input_dev *input;
 	int i;
 	int irq, error;
+	char clk_name[8];
 
 	if (!pdev->dev.platform_data) {
 		dev_err(&pdev->dev, "no platform data defined\n");
@@ -206,6 +284,14 @@ static int __devinit sh_keysc_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "failed to remap I/O memory\n");
 		error = -ENXIO;
 		goto err1;
+	}
+
+	snprintf(clk_name, sizeof(clk_name), "keysc%d", pdev->id);
+	priv->clk = clk_get(&pdev->dev, clk_name);
+	if (IS_ERR(priv->clk)) {
+		dev_err(&pdev->dev, "cannot get clock \"%s\"\n", clk_name);
+		error = PTR_ERR(priv->clk);
+		goto err5;
 	}
 
 	priv->input = input_allocate_device();
@@ -247,15 +333,35 @@ static int __devinit sh_keysc_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "failed to register input device\n");
 		goto err4;
 	}
-
+	
+	clk_enable(priv->clk);
 	pm_runtime_enable(&pdev->dev);
 	pm_runtime_get_sync(&pdev->dev);
 
-	sh_keysc_write(priv, KYCR1, (sh_keysc_mode[pdata->mode].kymd << 8) |
-		       pdata->scan_timing);
-	sh_keysc_level_mode(priv, 0);
+	if (pdata->automode) {
+		sh_keysc_write(priv, A_KYCR1, A_KYCR1_KEYEXT |
+				(sh_keysc_mode[pdata->mode].kymd << 8) |
+				 A_KYCR1_MASKVALUE | pdata->scan_timing);
+		if (!pdata->scan_timing2)
+			pdata->scan_timing2 = 7;
+		if (!pdata->scan_timing1)
+			pdata->scan_timing1 = 2;
+		sh_keysc_write(priv, A_KYCR2, (pdata->scan_timing2 << 12) |
+				(pdata->scan_timing1 << 8) | 0x01);
+		sh_keysc_write(priv, A_KYCR6, 0);
+		sh_keysc_write(priv, A_KYOUTDR, 0);
+		sh_keysc_write(priv, A_KYIR, A_KYIR_FIFONE);
+		sh_keysc_write(priv, A_KYCR4, A_KYCR4_AUTOLPC);
+	} else {
+		sh_keysc_write(priv, KYCR1,
+				(sh_keysc_mode[pdata->mode].kymd << 8) |
+				pdata->scan_timing);
+		sh_keysc_write(priv, KYOUTDR, 0);
+		sh_keysc_level_mode(priv, 0);
+	}
 
-	device_init_wakeup(&pdev->dev, 1);
+	if (pdata->wakeup)
+		device_init_wakeup(&pdev->dev, 1);
 
 	return 0;
 
@@ -263,6 +369,8 @@ static int __devinit sh_keysc_probe(struct platform_device *pdev)
 	free_irq(irq, pdev);
  err3:
 	input_free_device(input);
+err5:
+	clk_put(priv->clk);	
  err2:
 	iounmap(priv->iomem_base);
  err1:
@@ -276,7 +384,12 @@ static int __devexit sh_keysc_remove(struct platform_device *pdev)
 {
 	struct sh_keysc_priv *priv = platform_get_drvdata(pdev);
 
-	sh_keysc_write(priv, KYCR2, KYCR2_IRQ_DISABLED);
+	if (priv->pdata.automode) {
+		sh_keysc_write(priv, A_KYCR4, 0);
+		sh_keysc_write(priv, A_KYIR, 0);
+	} else {
+		sh_keysc_write(priv, KYCR2, KYCR2_IRQ_DISABLED);
+	}
 
 	input_unregister_device(priv->input);
 	free_irq(platform_get_irq(pdev, 0), pdev);
@@ -284,7 +397,9 @@ static int __devexit sh_keysc_remove(struct platform_device *pdev)
 
 	pm_runtime_put_sync(&pdev->dev);
 	pm_runtime_disable(&pdev->dev);
-
+	
+	clk_disable(priv->clk);
+	clk_put(priv->clk);
 	platform_set_drvdata(pdev, NULL);
 	kfree(priv);
 
@@ -297,16 +412,20 @@ static int sh_keysc_suspend(struct device *dev)
 	struct platform_device *pdev = to_platform_device(dev);
 	struct sh_keysc_priv *priv = platform_get_drvdata(pdev);
 	int irq = platform_get_irq(pdev, 0);
-	unsigned short value;
-
-	value = sh_keysc_read(priv, KYCR1);
+	unsigned long value;
 
 	if (device_may_wakeup(dev)) {
-		sh_keysc_write(priv, KYCR1, value | 0x80);
+		if (priv->pdata.automode) {
+			value = sh_keysc_read(priv, A_KYIR);
+			sh_keysc_write(priv, A_KYIR, value | A_KYIR_STBCSL);
+		} else {
+			value = sh_keysc_read(priv, KYCR1);
+			sh_keysc_write(priv, KYCR1, value | 0x80);
+		}
 		enable_irq_wake(irq);
 	} else {
-		sh_keysc_write(priv, KYCR1, value & ~0x80);
 		pm_runtime_put_sync(dev);
+		clk_disable(priv->clk);
 	}
 
 	return 0;
@@ -315,12 +434,16 @@ static int sh_keysc_suspend(struct device *dev)
 static int sh_keysc_resume(struct device *dev)
 {
 	struct platform_device *pdev = to_platform_device(dev);
+        struct sh_keysc_priv *priv = platform_get_drvdata(pdev);
 	int irq = platform_get_irq(pdev, 0);
 
 	if (device_may_wakeup(dev))
 		disable_irq_wake(irq);
 	else
+		{
+		clk_enable(priv->clk);
 		pm_runtime_get_sync(dev);
+		}
 
 	return 0;
 }

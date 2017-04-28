@@ -24,6 +24,11 @@
 
 #include "u_ether.h"
 #include "rndis.h"
+#include <linux/usb/gadget_cust.h>
+
+#include <linux/clk.h>
+#include <linux/sh_clk.h>
+#include <mach/pm.h>
 
 
 /*
@@ -71,6 +76,8 @@ struct f_rndis {
 	struct gether			port;
 	u8				ctrl_id, data_id;
 	u8				ethaddr[ETH_ALEN];
+	u32				vendorID;
+	const char			*manufacturer;
 	int				config;
 
 	struct usb_ep			*notify;
@@ -101,6 +108,9 @@ static unsigned int bitrate(struct usb_gadget *g)
 
 #define LOG2_STATUS_INTERVAL_MSEC	5	/* 1 << 5 == 32 msec */
 #define STATUS_BYTECOUNT		8	/* 8 bytes data */
+#define HSUSBDMA_IRQ           117
+#define R8A66597_UDC_IRQ       119
+#define smc_net		       228
 
 
 /* interface descriptor: */
@@ -172,7 +182,7 @@ rndis_iad_descriptor = {
 	.bDescriptorType =	USB_DT_INTERFACE_ASSOCIATION,
 
 	.bFirstInterface =	0, /* XXX, hardcoded */
-	.bInterfaceCount = 	2,	// control + data
+	.bInterfaceCount =	2,/* control + data*/
 	.bFunctionClass =	USB_CLASS_COMM,
 	.bFunctionSubClass =	USB_CDC_SUBCLASS_ETHERNET,
 	.bFunctionProtocol =	USB_CDC_PROTO_NONE,
@@ -557,6 +567,7 @@ static int rndis_set_alt(struct usb_function *f, unsigned intf, unsigned alt)
 
 		if (rndis->port.in_ep->driver_data) {
 			DBG(cdev, "reset rndis\n");
+			pr_info("reset rndis\n");
 			gether_disconnect(&rndis->port);
 		}
 
@@ -613,6 +624,7 @@ static void rndis_disable(struct usb_function *f)
 		return;
 
 	DBG(cdev, "rndis deactivated\n");
+	pr_info("%s\n", __func__);
 
 	rndis_uninit(rndis->config);
 	gether_disconnect(&rndis->port);
@@ -636,7 +648,8 @@ static void rndis_open(struct gether *geth)
 	struct usb_composite_dev *cdev = geth->func.config->cdev;
 
 	DBG(cdev, "%s\n", __func__);
-
+	NPRINTK("\n");
+	
 	rndis_set_param_medium(rndis->config, NDIS_MEDIUM_802_3,
 				bitrate(cdev->gadget) / 100);
 	rndis_signal_connect(rndis->config);
@@ -647,6 +660,7 @@ static void rndis_close(struct gether *geth)
 	struct f_rndis		*rndis = func_to_rndis(&geth->func);
 
 	DBG(geth->func.config->cdev, "%s\n", __func__);
+	NPRINTK("\n");
 
 	rndis_set_param_medium(rndis->config, NDIS_MEDIUM_802_3, 0);
 	rndis_signal_disconnect(rndis->config);
@@ -661,9 +675,9 @@ rndis_bind(struct usb_configuration *c, struct usb_function *f)
 {
 	struct usb_composite_dev *cdev = c->cdev;
 	struct f_rndis		*rndis = func_to_rndis(f);
-	int			status;
+	int			status, ret = 0;
 	struct usb_ep		*ep;
-
+	int count = 0;
 	/* allocate instance-specific interface IDs */
 	status = usb_interface_id(c, f);
 	if (status < 0)
@@ -768,17 +782,31 @@ rndis_bind(struct usb_configuration *c, struct usb_function *f)
 	rndis_set_param_medium(rndis->config, NDIS_MEDIUM_802_3, 0);
 	rndis_set_host_mac(rndis->config, rndis->ethaddr);
 
-#if 0
-// FIXME
-	if (rndis_set_param_vendor(rndis->config, vendorID,
-				manufacturer))
-		goto fail0;
-#endif
+	if (rndis->manufacturer && rndis->vendorID &&
+			rndis_set_param_vendor(rndis->config, rndis->vendorID,
+					       rndis->manufacturer))
+		goto fail;
 
 	/* NOTE:  all that is done without knowing or caring about
 	 * the network link ... which is unavailable to this code
 	 * until we're activated via set_alt().
 	 */
+	ret = stop_cpufreq();
+	DBG(cdev, "%s(): stop_cpufreq\n", __func__);
+	if (ret) {
+		dfs_started = 1;
+		ERROR(cdev, "%s(): error<%d>! stop_cpufreq\n",
+			__func__, ret);
+	} else {
+
+		dfs_started = 0;
+		while (!cpu_online(1)||(++count < 10))
+		udelay(1);
+
+		irq_set_affinity(HSUSBDMA_IRQ, cpumask_of(1));
+		irq_set_affinity(R8A66597_UDC_IRQ, cpumask_of(1));
+		irq_set_affinity(smc_net, cpumask_of(0));
+		}
 
 	DBG(cdev, "RNDIS: %s speed IN/%s OUT/%s NOTIFY/%s\n",
 			gadget_is_superspeed(c->cdev->gadget) ? "super" :
@@ -830,6 +858,12 @@ rndis_unbind(struct usb_configuration *c, struct usb_function *f)
 	kfree(rndis->notify_req->buf);
 	usb_ep_free_request(rndis->notify, rndis->notify_req);
 
+	if (!dfs_started) {
+		start_cpufreq();
+		DBG(c->cdev, "%s(): start_cpufreq\n", __func__);
+		dfs_started = 1;
+		irq_set_affinity(smc_net, cpu_all_mask);
+	}
 	kfree(rndis);
 }
 
@@ -855,19 +889,26 @@ static inline bool can_support_rndis(struct usb_configuration *c)
 int
 rndis_bind_config(struct usb_configuration *c, u8 ethaddr[ETH_ALEN])
 {
+	return rndis_bind_config_vendor(c, ethaddr, 0, NULL);
+}
+
+int
+rndis_bind_config_vendor(struct usb_configuration *c, u8 ethaddr[ETH_ALEN],
+				u32 vendorID, const char *manufacturer)
+{
 	struct f_rndis	*rndis;
 	int		status;
 
 	if (!can_support_rndis(c) || !ethaddr)
 		return -EINVAL;
 
+	/* setup RNDIS itself */
+	status = rndis_init();
+	if (status < 0)
+		return status;
+
 	/* maybe allocate device-global string IDs */
 	if (rndis_string_defs[0].id == 0) {
-
-		/* ... and setup RNDIS itself */
-		status = rndis_init();
-		if (status < 0)
-			return status;
 
 		/* control interface label */
 		status = usb_string_id(c->cdev);
@@ -898,6 +939,8 @@ rndis_bind_config(struct usb_configuration *c, u8 ethaddr[ETH_ALEN])
 		goto fail;
 
 	memcpy(rndis->ethaddr, ethaddr, ETH_ALEN);
+	rndis->vendorID = vendorID;
+	rndis->manufacturer = manufacturer;
 
 	/* RNDIS activates when the host changes this filter */
 	rndis->port.cdc_filter = 0;

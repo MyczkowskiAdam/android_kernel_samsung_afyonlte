@@ -764,6 +764,20 @@ config CPU_DCACHE_WRITETHROUGH
 	  Say Y here to use the data cache in writethrough mode. Unless you
 	  specifically require this or are unsure, say N.
 
+config CPU_DCACHE_PREFETCH
+	bool "Enable D-cache data prefetching"
+	depends on CPU_V7
+	help
+	  Say Y here if you activate an automatic prefetcher implemented
+	  in the Cortex-A9 data cache, that can monitor and prefetch
+	  two independent data stream.
+
+	  Note that when the software issues a PLD instruction the PLD
+	  prefetch unit always takes precedence over requests from the
+	  data prefetch mechanism.  Prefetched lines in the speculative
+	  prefetcher can be dropped before they are allocated.  PLD
+	  instruction are always executed and never dropped.
+
 config CPU_CACHE_ROUND_ROBIN
 	bool "Round robin I and D cache replacement algorithm"
 	depends on (CPU_ARM926T || CPU_ARM946E || CPU_ARM1020) && (!CPU_ICACHE_DISABLE || !CPU_DCACHE_DISABLE)
@@ -776,6 +790,15 @@ config CPU_BPREDICT_DISABLE
 	depends on CPU_ARM1020 || CPU_V6 || CPU_V6K || CPU_MOHAWK || CPU_XSC3 || CPU_V7 || CPU_FA526
 	help
 	  Say Y here to disable branch prediction.  If unsure, say N.
+
+config CPU_DYNAMIC_CLOCK_GATING
+	bool "Enable dynamic clock gating"
+	depends on CPU_V7
+	help
+	  Eneable dynamic high level clock gating for Cortex-A9 CPUS, as
+	  described in 2.3.3 "Dynamic high level clock gating" of the
+	  Cortex-A9 TRM.  This may cut the clock of the integer core,
+	  system control block, and Data Engine in certain conditions.
 
 config TLS_REG_EMUL
 	bool
@@ -863,6 +886,90 @@ config CACHE_PL310
 	help
 	  This option enables optimisations for the PL310 cache
 	  controller.
+
+config CACHE_PL310_PREFETCH
+	bool
+	depends on CACHE_PL310
+	default y if CACHE_PL310_INSN_PREFETCH || CACHE_PL310_DATA_PREFETCH
+	help
+	  The prefetch operation is the capability of attempting to fetch
+	  cache lines from L3 in advance, to improve system performance.
+	  The following functionalities are available in the PL310:
+	  - Internal instruction and data prefetch engine
+	  - Double linefill issuing
+	  - Prefetch dropping
+
+config CACHE_PL310_INSN_PREFETCH
+	bool "PL310: Instruction prefetch"
+	depends on CACHE_PL310
+	help
+	  Say Y here to enable the PL310 instruction prefetch feature.
+
+config CACHE_PL310_DATA_PREFETCH
+	bool "PL310: Data prefetch"
+	depends on CACHE_PL310
+	help
+	  Say Y here to enable the PL310 data prefetch feature.
+
+config CACHE_PL310_PREFETCH_DOUBLE_LINEFILL
+	bool "prefetch feature: Double linefill issuing"
+	depends on CACHE_PL310 && CACHE_PL310_PREFETCH
+	help
+	  The L2C-310 cache line length is 32-byte. Therefore, by default,
+	  on each L2 cache miss, L2C-310 issues 32-byte linefills, 4 x 64-bit
+	  read bursts, to the L3 memory system.  L2C-310 can issue 64-byte
+	  linefills, 8 x 64-bit read bursts, on an L2 cache miss.  When
+	  the L2C-310 is waiting for the data from L3, it performs a lookup
+	  on the second cache line targeted by the 64-byte linefill.  If it
+	  misses, data corresponding to the second cache line are allocated
+	  to the L2 cache.  If it hits, data corresponding to the second
+	  cache line are discarded.
+
+	  Note:
+	  - Double linefills are not issued for prefetch reads if you enable
+	    exclusive cache configuration
+	  - Double linefills are not launched when crossing a 4KB boundary.
+
+config CACHE_PL310_PREFETCH_DROP
+	bool "prefetch feature: Prefetch dropping"
+	depends on CACHE_PL310 && CACHE_PL310_PREFETCH
+	help
+	  Prefetch accesses can use a large amount of the address slots
+	  present in the L2C-310 master ports.  This option prevents
+	  non-prefetch accesses being serviced, and affects performance.
+	  To counter this effect, L2C-310 can drop prefetch accesses.
+
+	  When enabled, if a resource conflict exists between prefetch
+	  and non-prefetch accesses in the L2C-310 master ports, prefetch
+	  accesses are dropped.  When data corresponding to these dropped
+	  prefetch accesses return from L3, they are discarded, and not
+	  allocated into the L2 cache.
+
+config CACHE_PL310_STANDBY_MODE
+	bool "PL310: Standby mode"
+	depends on CACHE_PL310
+	help
+	  When a processor is in the Wait For Interrupt mode, the usual
+	  protocol is to set an output HIGH.  For example, the Cortex-A9
+	  MPCore processor sets its SCUIDLE output HIGH to indicate that
+	  it is in Wait For Interrupt mode.  To make use of this feature
+	  you must connect SCUIDLE to the STOPCLK input of the L2C-310.
+
+	  When STOPCLK is HIGH, and the standby mode feature is enabled,
+	  the L2C-310 does the following:
+	  1. Waits for the IDLE state.
+	  2. Drives the READY outputs of its slave interfaces LOW.
+	  3. Asserts the CLKSTOPPED output HIGH.
+	  4. Stops its clock.
+
+config CACHE_PL310_DYNAMIC_CLOCK_GATING
+	bool "PL310: Dynamic clock gating"
+	depends on CACHE_PL310
+	help
+	  When you enable the dynamic high-level clock-gating feature,
+	  the cache controller stops its clock when it is idle.  It does
+	  not stop the clock immediately when it is idle, but after it
+	  counts several clock cycles.
 
 config CACHE_TAUROS2
 	bool "Enable the Tauros2 L2 cache controller"

@@ -62,16 +62,12 @@ config INPUT_AD714X_SPI
 	  To compile this driver as a module, choose M here: the
 	  module will be called ad714x-spi.
 
-config INPUT_BMA150
-	tristate "BMA150/SMB380 acceleration sensor support"
-	depends on I2C
-	select INPUT_POLLDEV
+config INPUT_D2153_ONKEY
+	tristate "D2153 ONKEY support"
+	depends on MFD_D2153
 	help
-	  Say Y here if you have Bosch Sensortec's BMA150 or SMB380
-	  acceleration sensor hooked to an I2C bus.
-
-	  To compile this driver as a module, choose M here: the
-	  module will be called bma150.
+	  Say Y here if you want the ONKEY functionality from the
+	  Dialog D2153 multifunction device
 
 config INPUT_PCSPKR
 	tristate "PC Speaker support"
@@ -167,16 +163,6 @@ config INPUT_MMA8450
 	  To compile this driver as a module, choose M here: the
 	  module will be called mma8450.
 
-config INPUT_MPU3050
-	tristate "MPU3050 Triaxial gyroscope sensor"
-	depends on I2C
-	help
-	  Say Y here if you want to support InvenSense MPU3050
-	  connected via an I2C bus.
-
-	  To compile this driver as a module, choose M here: the
-	  module will be called mpu3050.
-
 config INPUT_APANEL
 	tristate "Fujitsu Lifebook Application Panel buttons"
 	depends on X86 && I2C && LEDS_CLASS
@@ -190,17 +176,6 @@ config INPUT_APANEL
 
 	 To compile this driver as a module, choose M here: the module will
 	 be called apanel.
-
-config INPUT_GP2A
-	tristate "Sharp GP2AP002A00F I2C Proximity/Opto sensor driver"
-	depends on I2C
-	depends on GENERIC_GPIO
-	help
-	  Say Y here if you have a Sharp GP2AP002A00F proximity/als combo-chip
-	  hooked to an I2C bus.
-
-	  To compile this driver as a module, choose M here: the
-	  module will be called gp2ap002a00f.
 
 config INPUT_GPIO_TILT_POLLED
 	tristate "Polled GPIO tilt switch"
@@ -278,6 +253,17 @@ config INPUT_ATI_REMOTE2
 
 	  To compile this driver as a module, choose M here: the module will be
 	  called ati_remote2.
+
+config INPUT_KEYCHORD
+	tristate "Key chord input driver support"
+	help
+	  Say Y here if you want to enable the key chord driver
+	  accessible at /dev/keychord.  This driver can be used
+	  for receiving notifications when client specified key
+	  combinations are pressed.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called keychord.
 
 config INPUT_KEYSPAN_REMOTE
 	tristate "Keyspan DMR USB remote control (EXPERIMENTAL)"
@@ -406,6 +392,11 @@ config INPUT_SGI_BTNS
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called sgi_btns.
+
+config INPUT_GPIO
+	tristate "GPIO driver support"
+	help
+	  Say Y here if you want to support gpio based keys, wheels etc...
 
 config HP_SDC_RTC
 	tristate "HP SDC Real Time Clock"
@@ -589,5 +580,8 @@ config INPUT_XEN_KBDDEV_FRONTEND
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called xen-kbdfront.
+
+source "drivers/input/misc/mpu6050/Kconfig"
+source "drivers/input/misc/mpu6500/Kconfig"
 
 endif

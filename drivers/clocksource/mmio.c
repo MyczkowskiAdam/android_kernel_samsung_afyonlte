@@ -40,6 +40,9 @@ cycle_t clocksource_mmio_readw_down(struct clocksource *c)
 	return ~(unsigned)readw_relaxed(to_mmio_clksrc(c)->reg);
 }
 
+void __weak clocksource_mmio_suspend(struct clocksource *c) { }
+void __weak clocksource_mmio_resume(struct clocksource *c) { }
+
 /**
  * clocksource_mmio_init - Initialize a simple mmio based clocksource
  * @base:	Virtual address of the clock readout register
@@ -68,6 +71,8 @@ int __init clocksource_mmio_init(void __iomem *base, const char *name,
 	cs->clksrc.read = read;
 	cs->clksrc.mask = CLOCKSOURCE_MASK(bits);
 	cs->clksrc.flags = CLOCK_SOURCE_IS_CONTINUOUS;
+	cs->clksrc.suspend = clocksource_mmio_suspend;
+	cs->clksrc.resume = clocksource_mmio_resume;
 
 	return clocksource_register_hz(&cs->clksrc, hz);
 }

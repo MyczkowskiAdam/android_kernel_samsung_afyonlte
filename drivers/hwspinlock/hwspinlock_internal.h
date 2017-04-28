@@ -37,6 +37,7 @@ struct hwspinlock_ops {
 	int (*trylock)(struct hwspinlock *lock);
 	void (*unlock)(struct hwspinlock *lock);
 	void (*relax)(struct hwspinlock *lock);
+	u32  (*get_lock_id)(struct hwspinlock *lock);
 };
 
 /**
@@ -57,13 +58,18 @@ struct hwspinlock {
  * @ops: platform-specific hwspinlock handlers
  * @base_id: id index of the first lock in this device
  * @num_locks: number of locks in this device
- * @lock: dynamically allocated array of 'struct hwspinlock'
+ * @bank_data: private data which can be shared across 'struct hwspinlock'
+ *	       instances in this device, owned by the underlying platform-
+ *	       specific hwspinlock driver
+ * @lock: dynamically allocated array of 'struct hwspinlock' (must be placed
+ *	  at the end of the hwspinlock_device)
  */
 struct hwspinlock_device {
 	struct device *dev;
 	const struct hwspinlock_ops *ops;
 	int base_id;
 	int num_locks;
+	void *bank_data;
 	struct hwspinlock lock[0];
 };
 

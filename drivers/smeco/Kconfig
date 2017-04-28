@@ -1,0 +1,93 @@
+#
+# Smeco Linux Kernel Module Configuration file
+#
+
+menuconfig SMECO
+	tristate "Shared Memory IPC support (SMeCo / SMC)"
+	default y
+	---help---
+	The Shared Memory IPC (SMeCo) is used between APE and Modem.
+
+if SMECO
+
+config SMECO_L2MUX
+	boolean "Use L2MUX in SMeCo / SMC"
+	default y
+
+config SMECO_CONTROL
+	boolean "Use SMeCo / SMC Control Instance"
+	default n
+	---help---
+	If this is selected the SMC control channels between CPUs are taken in use
+
+if SMECO_CONTROL
+	config SMECO_CONTROL_USE_PHONET
+	    boolean "Use Phonet protocol in SMC Control"
+	    default y
+	     ---help---
+		If this is selected the SMC control uses phonet protocol for communication
+endif
+	
+config SMECO_TEST
+	boolean "SMeCo SMC Test Features"
+	default n
+	---help---
+	If this option is selected the SMeCo test cases are built in the package.
+
+if SMECO_TEST
+
+	config SMECO_TRACES_ENABLED
+	boolean "Activate SMeCo / SMC traces"
+	default n
+
+	if SMECO_TRACES_ENABLED
+		config SMECO_TRACES_KERN_ALERT
+			boolean "Print SMeCo/SMC traces in KERN_ALERT mode"
+			default n
+			 ---help---
+			If this is selected the SMC traces are printed in KERN_ALERT mode
+				
+		config SMECO_RUNTIME_TRACES_ENABLED
+			boolean "Activate SMeCo / SMC runtime R&D traces"
+			default n
+			---help---
+			If this is selected the SMC runtime traces are enabled and can be activated using IOCTL
+		
+		config SMECO_STM_TRACES_ENABLED
+			boolean "Activate SMeCo / SMC STM traces"
+			default n
+			---help---
+			If this is selected the SMC STM traces are enabled
+	endif
+
+	config SMECO_ENABLE_DRIVER_SELF
+			boolean "Enable SMeCo / SMC driver by itself (NOTE: Only for early test phase use!)"
+			default n
+			---help---
+			Enables SMC device by initializing channels and SHM area. NOTE: Use this only for early phase testing purposes.
+
+
+	config SMECO_INITIALIZE_DRIVER_SELF
+			boolean "Initialize SMeCo / SMC driver by itself"
+			default n
+	
+	if SMECO_INITIALIZE_DRIVER_SELF
+	
+		config SMECO_INSTANTIATE_DRIVER_SELF
+			boolean "Instantiate SMeCo / SMC driver by itself (Only for EOS2)"
+			default n
+			---help---
+			Instantiates the SMC driver resources. NOTE: Works only with EOS2!		
+		
+	endif
+
+	config SMECO_TEST_MODULE
+		boolean "SMeCo SMC Test Module"
+		default n
+		---help---
+		If this option is selected the SMeCo test application module is built in the package.
+endif
+
+
+endif
+

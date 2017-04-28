@@ -19,13 +19,17 @@
 #include <linux/if_ether.h>
 #include <linux/if_phonet.h>
 #include <linux/if_arp.h>
+#include <linux/phonet.h>
+#include <linux/rtnetlink.h>
 
 #include <linux/usb/ch9.h>
 #include <linux/usb/cdc.h>
 #include <linux/usb/composite.h>
 
+#include <net/phonet/pn_dev.h>
 #include "u_phonet.h"
 
+#define PN_NETDEV_AUTOCONF
 #define PN_MEDIA_USB	0x1B
 #define MAXPACKET	512
 #if (PAGE_SIZE % MAXPACKET)
@@ -41,6 +45,7 @@ struct phonet_port {
 
 struct f_phonet {
 	struct usb_function		function;
+	u8				ctrl_id, data_id;
 	struct {
 		struct sk_buff		*skb;
 		spinlock_t		lock;
@@ -64,6 +69,17 @@ static inline struct f_phonet *func_to_pn(struct usb_function *f)
 #define USB_CDC_SUBCLASS_PHONET	0xfe
 #define USB_CDC_PHONET_TYPE	0xab
 
+static struct usb_interface_assoc_descriptor
+pn_iad_desc = {
+	.bLength 	=	sizeof pn_iad_desc,
+	.bDescriptorType = 	USB_DT_INTERFACE_ASSOCIATION,
+
+	.bInterfaceCount = 	2,
+	.bFunctionClass =	USB_CLASS_COMM,
+	.bFunctionSubClass =	USB_CDC_SUBCLASS_PHONET,
+	.bFunctionProtocol =	USB_CDC_PROTO_NONE,
+};
+
 static struct usb_interface_descriptor
 pn_control_intf_desc = {
 	.bLength =		sizeof pn_control_intf_desc,
@@ -72,6 +88,7 @@ pn_control_intf_desc = {
 	/* .bInterfaceNumber =	DYNAMIC, */
 	.bInterfaceClass =	USB_CLASS_COMM,
 	.bInterfaceSubClass =	USB_CDC_SUBCLASS_PHONET,
+	.bInterfaceProtocol =	USB_CDC_PROTO_NONE,
 };
 
 static const struct usb_cdc_header_desc
@@ -161,6 +178,7 @@ pn_hs_source_desc = {
 };
 
 static struct usb_descriptor_header *fs_pn_function[] = {
+	(struct usb_descriptor_header *) &pn_iad_desc,
 	(struct usb_descriptor_header *) &pn_control_intf_desc,
 	(struct usb_descriptor_header *) &pn_header_desc,
 	(struct usb_descriptor_header *) &pn_phonet_desc,
@@ -173,6 +191,7 @@ static struct usb_descriptor_header *fs_pn_function[] = {
 };
 
 static struct usb_descriptor_header *hs_pn_function[] = {
+	(struct usb_descriptor_header *) &pn_iad_desc,
 	(struct usb_descriptor_header *) &pn_control_intf_desc,
 	(struct usb_descriptor_header *) &pn_header_desc,
 	(struct usb_descriptor_header *) &pn_phonet_desc,
@@ -184,6 +203,28 @@ static struct usb_descriptor_header *hs_pn_function[] = {
 	NULL,
 };
 
+/* string descriptors: */
+#define PN_CTRL_IDX	0
+#define PN_DATA_IDX	1
+#define PN_IAD_IDX	2
+
+/* static strings, in UTF-8 */
+static struct usb_string pn_string_defs[] = {
+	[PN_CTRL_IDX].s = "Phonet Control",
+	[PN_DATA_IDX].s = "Phonet Data",
+	[PN_IAD_IDX ].s = "Phonet",
+	{  /* ZEROES END LIST */ },
+};
+
+static struct usb_gadget_strings pn_string_table = {
+	.language =	0x0409,	/* en-us */
+	.strings =	pn_string_defs,
+};
+
+static struct usb_gadget_strings *pn_strings[] = {
+	&pn_string_table,
+	NULL,
+};
 /*-------------------------------------------------------------------------*/
 
 static int pn_net_open(struct net_device *dev)
@@ -267,10 +308,37 @@ static int pn_net_mtu(struct net_device *dev, int new_mtu)
 	return 0;
 }
 
+static int
+pn_net_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
+{
+	/* struct if_phonet_req *req = (struct if_phonet_req *)ifr; */
+	int ret;
+
+	switch (cmd)
+	{
+	    case SIOCPNGAUTOCONF:
+#ifdef PN_NETDEV_AUTOCONF
+		ret = phonet_address_add(dev, PN_MEDIA_USB);
+		if (ret)
+			return ret;
+
+		phonet_address_notify(RTM_NEWADDR, dev, PN_MEDIA_USB);
+		phonet_route_add(dev, PN_DEV_PC);
+
+		dev_open(dev);
+#endif
+		/* Return NOIOCTLCMD so Phonet won't do it again */
+		return -ENOIOCTLCMD;
+	}
+
+	return -ENOIOCTLCMD;
+}
+
 static const struct net_device_ops pn_netdev_ops = {
 	.ndo_open	= pn_net_open,
 	.ndo_stop	= pn_net_close,
 	.ndo_start_xmit	= pn_net_xmit,
+	.ndo_do_ioctl   = pn_net_ioctl,
 	.ndo_change_mtu	= pn_net_mtu,
 };
 
@@ -283,7 +351,7 @@ static void pn_net_setup(struct net_device *dev)
 	dev->hard_header_len	= 1;
 	dev->dev_addr[0]	= PN_MEDIA_USB;
 	dev->addr_len		= 1;
-	dev->tx_queue_len	= 1;
+	dev->tx_queue_len	= 5;
 
 	dev->netdev_ops		= &pn_netdev_ops;
 	dev->destructor		= free_netdev;
@@ -322,46 +390,54 @@ static void pn_rx_complete(struct usb_ep *ep, struct usb_request *req)
 	struct page *page = req->context;
 	struct sk_buff *skb;
 	unsigned long flags;
-	int status = req->status;
 
-	switch (status) {
-	case 0:
+	if (likely(req->status == 0))
+	{
 		spin_lock_irqsave(&fp->rx.lock, flags);
+		{
 		skb = fp->rx.skb;
 		if (!skb)
-			skb = fp->rx.skb = netdev_alloc_skb(dev, 12);
+			skb = netdev_alloc_skb(dev, 12);
 		if (req->actual < req->length) /* Last fragment */
 			fp->rx.skb = NULL;
+		else
+			fp->rx.skb = skb;
+		}
 		spin_unlock_irqrestore(&fp->rx.lock, flags);
 
 		if (unlikely(!skb))
-			break;
+			goto cont;
 
 		if (skb->len == 0) { /* First fragment */
+			skb->dev = dev;
 			skb->protocol = htons(ETH_P_PHONET);
 			skb_reset_mac_header(skb);
 			/* Can't use pskb_pull() on page in IRQ */
 			memcpy(skb_put(skb, 1), page_address(page), 1);
+			skb_add_rx_frag(skb, skb_shinfo(skb)->nr_frags, page,
+					1, req->actual-1, PAGE_SIZE);
+		} else {
+			skb_add_rx_frag(skb, skb_shinfo(skb)->nr_frags, page,
+					0, req->actual, PAGE_SIZE);
 		}
-
-		skb_add_rx_frag(skb, skb_shinfo(skb)->nr_frags, page,
-				skb->len <= 1, req->actual, PAGE_SIZE);
 		page = NULL;
 
-		if (req->actual < req->length) { /* Last fragment */
-			skb->dev = dev;
+		if (req->actual < req->length) {
 			dev->stats.rx_packets++;
 			dev->stats.rx_bytes += skb->len;
-
+			__skb_pull(skb, 1);
 			netif_rx(skb);
 		}
-		break;
+cont:
+		pn_rx_submit(fp, req, GFP_ATOMIC | __GFP_COLD);
+	} else {
+		switch (req->status) {
 
 	/* Do not resubmit in these cases: */
+		case 0:
 	case -ESHUTDOWN: /* disconnect */
 	case -ECONNABORTED: /* hw reset */
 	case -ECONNRESET: /* dequeued (unlink or netif down) */
-		req = NULL;
 		break;
 
 	/* Do resubmit in these cases: */
@@ -369,13 +445,13 @@ static void pn_rx_complete(struct usb_ep *ep, struct usb_request *req)
 		dev->stats.rx_over_errors++;
 	default:
 		dev->stats.rx_errors++;
+			pn_rx_submit(fp, req, GFP_ATOMIC | __GFP_COLD);
 		break;
+		}
 	}
 
 	if (page)
 		put_page(page);
-	if (req)
-		pn_rx_submit(fp, req, GFP_ATOMIC | __GFP_COLD);
 }
 
 /*-------------------------------------------------------------------------*/
@@ -433,9 +509,9 @@ static int pn_set_alt(struct usb_function *f, unsigned intf, unsigned alt)
 			fp->out_ep->driver_data = fp;
 			fp->in_ep->driver_data = fp;
 
-			netif_carrier_on(dev);
 			for (i = 0; i < phonet_rxq_size; i++)
 				pn_rx_submit(fp, fp->out_reqv[i], GFP_ATOMIC | __GFP_COLD);
+			netif_carrier_on(dev);
 		}
 		spin_unlock(&port->lock);
 		return 0;
@@ -453,10 +529,10 @@ static int pn_get_alt(struct usb_function *f, unsigned intf)
 
 	if (intf == pn_data_intf_desc.bInterfaceNumber) {
 		struct phonet_port *port = netdev_priv(fp->dev);
-		u8 alt;
+		int alt;
 
 		spin_lock(&port->lock);
-		alt = port->usb != NULL;
+		alt = (port->usb != NULL);
 		spin_unlock(&port->lock);
 		return alt;
 	}
@@ -478,8 +554,8 @@ static void pn_disconnect(struct usb_function *f)
 
 /*-------------------------------------------------------------------------*/
 
-static __init
-int pn_bind(struct usb_configuration *c, struct usb_function *f)
+
+static int pn_bind(struct usb_configuration *c, struct usb_function *f)
 {
 	struct usb_composite_dev *cdev = c->cdev;
 	struct usb_gadget *gadget = cdev->gadget;
@@ -491,12 +567,16 @@ int pn_bind(struct usb_configuration *c, struct usb_function *f)
 	status = usb_interface_id(c, f);
 	if (status < 0)
 		goto err;
+	fp->ctrl_id = status;
 	pn_control_intf_desc.bInterfaceNumber = status;
 	pn_union_desc.bMasterInterface0 = status;
+
+	pn_iad_desc.bFirstInterface = status;
 
 	status = usb_interface_id(c, f);
 	if (status < 0)
 		goto err;
+	fp->data_id = status;
 	pn_data_nop_intf_desc.bInterfaceNumber = status;
 	pn_data_intf_desc.bInterfaceNumber = status;
 	pn_union_desc.bSlaveInterface0 = status;
@@ -576,11 +656,39 @@ pn_unbind(struct usb_configuration *c, struct usb_function *f)
 
 static struct net_device *dev;
 
-int __init phonet_bind_config(struct usb_configuration *c)
+int phonet_bind_config(struct usb_configuration *c)
 {
 	struct f_phonet *fp;
-	int err, size;
+	int err, size, status;
 
+	printk(KERN_DEBUG "phonet_bind_config");
+
+// #ifdef CONFIG_USB_ANDROID_PHONET
+	/* maybe allocate device-global string IDs */
+	if (pn_string_defs[PN_CTRL_IDX].id == 0) {
+
+		/* control interface label */
+		status = usb_string_id(c->cdev);
+		if (status < 0)
+			return status;
+		pn_string_defs[PN_CTRL_IDX].id = status;
+		pn_control_intf_desc.iInterface = status;
+
+		/* data interface label */
+		status = usb_string_id(c->cdev);
+		if (status < 0)
+			return status;
+		pn_string_defs[PN_DATA_IDX].id = status;
+		pn_data_intf_desc.iInterface = status;
+
+		/* IAD iFunction label */
+		status = usb_string_id(c->cdev);
+		if (status < 0)
+			return status;
+		pn_string_defs[PN_IAD_IDX].id = status;
+		pn_iad_desc.iFunction = status;
+	}
+// #endif
 	size = sizeof(*fp) + (phonet_rxq_size * sizeof(struct usb_request *));
 	fp = kzalloc(size, GFP_KERNEL);
 	if (!fp)
@@ -588,6 +696,7 @@ int __init phonet_bind_config(struct usb_configuration *c)
 
 	fp->dev = dev;
 	fp->function.name = "phonet";
+	fp->function.strings = pn_strings;
 	fp->function.bind = pn_bind;
 	fp->function.unbind = pn_unbind;
 	fp->function.set_alt = pn_set_alt;
@@ -601,7 +710,7 @@ int __init phonet_bind_config(struct usb_configuration *c)
 	return err;
 }
 
-int __init gphonet_setup(struct usb_gadget *gadget)
+int gphonet_setup(struct usb_gadget *gadget)
 {
 	struct phonet_port *port;
 	int err;
@@ -618,12 +727,17 @@ int __init gphonet_setup(struct usb_gadget *gadget)
 	SET_NETDEV_DEV(dev, &gadget->dev);
 
 	err = register_netdev(dev);
-	if (err)
+	if (err) {
 		free_netdev(dev);
+		dev = NULL;
+	}
 	return err;
 }
 
 void gphonet_cleanup(void)
 {
-	unregister_netdev(dev);
+	if (dev) {
+		unregister_netdev(dev);
+		dev = NULL;
+	}
 }

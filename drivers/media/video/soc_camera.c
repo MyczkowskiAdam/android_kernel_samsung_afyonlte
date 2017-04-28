@@ -1,6 +1,9 @@
 /*
  * camera image capture (abstract) bus driver
  *
+ * Copyright (C) 2012 Renesas Mobile Corp.
+ * All rights reserved.
+ *
  * Copyright (C) 2008, Guennadi Liakhovetski <kernel@pengutronix.de>
  *
  * This driver provides an interface between platform-specific camera
@@ -502,7 +505,15 @@ static int soc_camera_open(struct file *file)
 		/* No device driver attached */
 		return -ENODEV;
 
+	/*
+	* Don't mess with the host during probe: wait until the loop in
+	* scan_add_host() completes
+	*/
+	if (mutex_lock_interruptible(&list_lock))
+		return -ERESTARTSYS;
 	ici = to_soc_camera_host(icd->parent);
+	mutex_unlock(&list_lock);
+
 
 	if (!try_module_get(ici->ops->owner)) {
 		dev_err(icd->pdev, "Couldn't lock capture bus driver.\n");
@@ -530,7 +541,6 @@ static int soc_camera_open(struct file *file)
 		if (icl->reset)
 			icl->reset(icd->pdev);
 
-		/* Don't mess with the host during probe */
 		mutex_lock(&ici->host_lock);
 		ret = ici->ops->add(icd);
 		mutex_unlock(&ici->host_lock);
@@ -583,7 +593,9 @@ esfmt:
 eresume:
 	soc_camera_power_off(icd, icl);
 epower:
+	mutex_lock(&ici->host_lock);
 	ici->ops->remove(icd);
+	mutex_unlock(&ici->host_lock);
 eiciadd:
 	icd->use_count--;
 	module_put(ici->ops->owner);
@@ -605,7 +617,9 @@ static int soc_camera_close(struct file *file)
 
 		if (ici->ops->init_videobuf2)
 			vb2_queue_release(&icd->vb2_vidq);
+		mutex_lock(&ici->host_lock);
 		ici->ops->remove(icd);
+		mutex_unlock(&ici->host_lock);
 
 		soc_camera_power_off(icd, icl);
 	}
@@ -634,11 +648,14 @@ static ssize_t soc_camera_read(struct file *file, char __user *buf,
 static int soc_camera_mmap(struct file *file, struct vm_area_struct *vma)
 {
 	struct soc_camera_device *icd = file->private_data;
+#if 0
 	struct soc_camera_host *ici = to_soc_camera_host(icd->parent);
+#endif
 	int err;
 
 	dev_dbg(icd->pdev, "mmap called, vma=0x%08lx\n", (unsigned long)vma);
 
+#if 0
 	if (icd->streamer != file)
 		return -EBUSY;
 
@@ -646,7 +663,9 @@ static int soc_camera_mmap(struct file *file, struct vm_area_struct *vma)
 		err = videobuf_mmap_mapper(&icd->vb_vidq, vma);
 	else
 		err = vb2_mmap(&icd->vb2_vidq, vma);
-
+#else
+	err = icd->vb2_vidq.mem_ops->mmap(icd, vma);
+#endif
 	dev_dbg(icd->pdev, "vma start=0x%08lx, size=%ld, ret=%d\n",
 		(unsigned long)vma->vm_start,
 		(unsigned long)vma->vm_end - (unsigned long)vma->vm_start,
@@ -835,6 +854,61 @@ static int soc_camera_streamoff(struct file *file, void *priv,
 	return 0;
 }
 
+static int soc_camera_g_ctrl(struct file *file, void *priv,
+			     struct v4l2_control *ctrl)
+{
+	struct soc_camera_device *icd = file->private_data;
+	struct soc_camera_host *ici = to_soc_camera_host(icd->parent);
+	struct v4l2_subdev *sd = soc_camera_to_subdev(icd);
+	int ret;
+
+	WARN_ON(priv != file->private_data);
+
+	if (ici->ops->get_ctrl) {
+		ret = ici->ops->get_ctrl(icd, ctrl);
+		if (ret != -ENOIOCTLCMD)
+			return ret;
+	}
+
+	return v4l2_subdev_call(sd, core, g_ctrl, ctrl);
+}
+
+static int soc_camera_s_ctrl(struct file *file, void *priv,
+			     struct v4l2_control *ctrl)
+{
+	struct soc_camera_device *icd = file->private_data;
+	struct soc_camera_host *ici = to_soc_camera_host(icd->parent);
+	struct v4l2_subdev *sd = soc_camera_to_subdev(icd);
+	int ret = 0;
+	struct soc_camera_link *icl = to_soc_camera_link(icd);
+	int power;
+
+	WARN_ON(priv != file->private_data);
+
+	if (V4L2_CID_SET_RESET == ctrl->id) {
+		if (ctrl->value)
+			power = 0;
+		else
+			power = 1;
+		if (icl->power) {
+			ret = icl->power(icd->pdev, power);
+			if (ret < 0) {
+				dev_err(icd->pdev, "special reset fail(%d)\n",
+					ret);
+			}
+		}
+		return ret;
+	}
+
+	if (ici->ops->set_ctrl) {
+		ret = ici->ops->set_ctrl(icd, ctrl);
+		if (ret != -ENOIOCTLCMD)
+			return ret;
+	}
+
+	return v4l2_subdev_call(sd, core, s_ctrl, ctrl);
+}
+
 static int soc_camera_cropcap(struct file *file, void *fh,
 			      struct v4l2_cropcap *a)
 {
@@ -959,7 +1033,7 @@ static void scan_add_host(struct soc_camera_host *ici)
 {
 	struct soc_camera_device *icd;
 
-	mutex_lock(&ici->host_lock);
+	mutex_lock(&list_lock);
 
 	list_for_each_entry(icd, &devices, list) {
 		if (icd->iface == ici->nr) {
@@ -970,7 +1044,7 @@ static void scan_add_host(struct soc_camera_host *ici)
 		}
 	}
 
-	mutex_unlock(&ici->host_lock);
+	mutex_unlock(&list_lock);
 }
 
 #ifdef CONFIG_I2C_BOARDINFO
@@ -1057,7 +1131,10 @@ static int soc_camera_probe(struct soc_camera_device *icd)
 	if (icl->reset)
 		icl->reset(icd->pdev);
 
+	mutex_lock(&ici->host_lock);
 	ret = ici->ops->add(icd);
+	mutex_unlock(&ici->host_lock);
+
 	if (ret < 0)
 		goto eadd;
 
@@ -1067,10 +1144,11 @@ static int soc_camera_probe(struct soc_camera_device *icd)
 	 * again after initialisation, even though it shouldn't be needed, we
 	 * don't do any IO here.
 	 */
+#if 0
 	ret = soc_camera_power_on(icd, icl);
 	if (ret < 0)
 		goto epower;
-
+#endif
 	/* Must have icd->vdev before registering the device */
 	ret = video_dev_create(icd);
 	if (ret < 0)
@@ -1129,11 +1207,11 @@ static int soc_camera_probe(struct soc_camera_device *icd)
 	ret = soc_camera_video_start(icd);
 	if (ret < 0)
 		goto evidstart;
-
+#if 0
 	ret = v4l2_subdev_call(sd, core, s_power, 1);
 	if (ret < 0 && ret != -ENOIOCTLCMD)
 		goto esdpwr;
-
+#endif
 	/* Try to improve our guess of a reasonable window format */
 	if (!v4l2_subdev_call(sd, video, g_mbus_fmt, &mf)) {
 		icd->user_width		= mf.width;
@@ -1141,17 +1219,19 @@ static int soc_camera_probe(struct soc_camera_device *icd)
 		icd->colorspace		= mf.colorspace;
 		icd->field		= mf.field;
 	}
-
+	mutex_lock(&ici->host_lock);
 	ici->ops->remove(icd);
-
+	mutex_unlock(&ici->host_lock);
+#if 0
 	soc_camera_power_off(icd, icl);
-
+#endif
 	mutex_unlock(&icd->video_lock);
 
 	return 0;
-
+#if 0
 esdpwr:
 	video_unregister_device(icd->vdev);
+#endif
 evidstart:
 	mutex_unlock(&icd->video_lock);
 	soc_camera_free_user_formats(icd);
@@ -1168,9 +1248,13 @@ eadddev:
 	video_device_release(icd->vdev);
 	icd->vdev = NULL;
 evdc:
+#if 0
 	soc_camera_power_off(icd, icl);
 epower:
+#endif
+	mutex_lock(&ici->host_lock);
 	ici->ops->remove(icd);
+	mutex_unlock(&ici->host_lock);
 eadd:
 	regulator_bulk_free(icl->num_regulators, icl->regulators);
 ereg:
@@ -1399,6 +1483,8 @@ static const struct v4l2_ioctl_ops soc_camera_ioctl_ops = {
 	.vidioc_prepare_buf	 = soc_camera_prepare_buf,
 	.vidioc_streamon	 = soc_camera_streamon,
 	.vidioc_streamoff	 = soc_camera_streamoff,
+	.vidioc_g_ctrl		 = soc_camera_g_ctrl,
+	.vidioc_s_ctrl		 = soc_camera_s_ctrl,
 	.vidioc_cropcap		 = soc_camera_cropcap,
 	.vidioc_g_crop		 = soc_camera_g_crop,
 	.vidioc_s_crop		 = soc_camera_s_crop,

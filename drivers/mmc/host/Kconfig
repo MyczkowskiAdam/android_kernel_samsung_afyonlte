@@ -619,3 +619,17 @@ config MMC_USHC
 
 	  Note: These controllers only support SDIO cards and do not
 	  support MMC or SD memory cards.
+
+config MMC_RENESAS_MMCIF
+	tristate "Renesas MMCIF Multimedia Card Interface support"
+	depends on MMC_BLOCK && ARCH_SHMOBILE
+	help
+	  This selects the Renesas MMCIF Multimedia Card Interface support.
+
+config MMC_RENESAS_SDHI
+	tristate "Renesas SDHI MMC/SD/SDIO Multimedia Card Interface support"
+	depends on MMC_BLOCK && ARCH_SHMOBILE
+	help
+	  This selects support for the Renesas Secure Digital Host Controller
+	  IP block, this provdes host support for SD/SDIO and MMC interface,
+	  in both PIO and external DMA modes.

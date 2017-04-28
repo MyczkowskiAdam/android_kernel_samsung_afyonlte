@@ -148,6 +148,14 @@ struct tc_plug_qopt {
 	__u32           limit;
 };
 
+/* MHI-MHDP section */
+
+struct tc_mhdp_qopt {
+	__u32	limit;			/* Queue length limit */
+	__u32	lowmark;		/* Low notification level */
+	__u32	highmark;		/* High notification level */
+};
+
 /* TBF section */
 
 struct tc_tbf_qopt {

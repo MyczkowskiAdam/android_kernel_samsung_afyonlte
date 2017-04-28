@@ -43,6 +43,11 @@
 #include <asm/localtimer.h>
 #include <asm/smp_plat.h>
 
+#ifdef CONFIG_SEC_DEBUG_SCHED_LOG
+#include <mach/sec_debug.h>
+#endif
+
+#include <memlog/memlog.h>
 /*
  * as from 2.5, kernels no longer have an init_tasks structure
  * so we need some other way of telling a new secondary core
@@ -56,7 +61,10 @@ enum ipi_msg_type {
 	IPI_CALL_FUNC,
 	IPI_CALL_FUNC_SINGLE,
 	IPI_CPU_STOP,
+	IPI_CPU_BACKTRACE,
 };
+
+static unsigned int skip_secondary_calibrate;
 
 static DECLARE_COMPLETION(cpu_running);
 
@@ -94,7 +102,6 @@ int __cpuinit __cpu_up(unsigned int cpu)
 	secondary_data.swapper_pg_dir = virt_to_phys(swapper_pg_dir);
 	__cpuc_flush_dcache_area(&secondary_data, sizeof(secondary_data));
 	outer_clean_range(__pa(&secondary_data), __pa(&secondary_data + 1));
-
 	/*
 	 * Now bring the CPU into our world.
 	 */
@@ -206,7 +213,7 @@ void __ref cpu_die(void)
 	mb();
 
 	/* Tell __cpu_die() that this CPU is now safe to dispose of */
-	complete(&cpu_died);
+	RCU_NONIDLE(complete(&cpu_died));
 
 	/*
 	 * actual CPU shutdown procedure is at least platform (if not
@@ -240,6 +247,16 @@ static void __cpuinit smp_store_cpu_info(unsigned int cpuid)
 	store_cpu_topology(cpuid);
 }
 
+/*
+ * Skip the secondary calibration on architectures sharing clock
+ * with primary cpu. Needs to be called for archs from
+ * platform_secondary_init()
+ */
+void secondary_skip_calibrate(void)
+{
+        skip_secondary_calibrate = 1;
+}
+
 static void percpu_timer_setup(void);
 
 /*
@@ -249,18 +266,24 @@ static void percpu_timer_setup(void);
 asmlinkage void __cpuinit secondary_start_kernel(void)
 {
 	struct mm_struct *mm = &init_mm;
-	unsigned int cpu = smp_processor_id();
+	unsigned int cpu;
+
+	/*
+	 * The identity mapping is uncached (strongly ordered), so
+	 * switch away from it before attempting any exclusive accesses.
+	 */
+	cpu_switch_mm(mm->pgd, mm);
+	enter_lazy_tlb(mm, current);
+	local_flush_tlb_all();
 
 	/*
 	 * All kernel threads share the same mm context; grab a
 	 * reference and switch to it.
 	 */
+	cpu = smp_processor_id();
 	atomic_inc(&mm->mm_count);
 	current->active_mm = mm;
 	cpumask_set_cpu(cpu, mm_cpumask(mm));
-	cpu_switch_mm(mm->pgd, mm);
-	enter_lazy_tlb(mm, current);
-	local_flush_tlb_all();
 
 	printk("CPU%u: Booted secondary processor\n", cpu);
 
@@ -275,7 +298,8 @@ asmlinkage void __cpuinit secondary_start_kernel(void)
 
 	notify_cpu_starting(cpu);
 
-	calibrate_delay();
+	if (!skip_secondary_calibrate)
+		calibrate_delay();
 
 	smp_store_cpu_info(cpu);
 
@@ -303,17 +327,21 @@ asmlinkage void __cpuinit secondary_start_kernel(void)
 
 void __init smp_cpus_done(unsigned int max_cpus)
 {
-	int cpu;
-	unsigned long bogosum = 0;
+        int cpu;
+        char bogosums[32];
+        unsigned long bogosum = 0;
 
-	for_each_online_cpu(cpu)
-		bogosum += per_cpu(cpu_data, cpu).loops_per_jiffy;
+        if (!skip_secondary_calibrate) {
+                for_each_online_cpu(cpu)
+                        bogosum += per_cpu(cpu_data, cpu).loops_per_jiffy;
 
-	printk(KERN_INFO "SMP: Total of %d processors activated "
-	       "(%lu.%02lu BogoMIPS).\n",
-	       num_online_cpus(),
-	       bogosum / (500000/HZ),
-	       (bogosum / (5000/HZ)) % 100);
+                snprintf(bogosums, sizeof(bogosums), " (%lu.%02lu BogoMIPS)",
+                        bogosum / (500000/HZ), (bogosum / (5000/HZ)) % 100);
+        } else
+                bogosums[0] = '\0';
+
+        pr_info("SMP: Total of %d processors activated%s.\n",
+                num_online_cpus(), bogosums);
 }
 
 void __init smp_prepare_boot_cpu(void)
@@ -383,6 +411,7 @@ static const char *ipi_types[NR_IPI] = {
 	S(IPI_CALL_FUNC, "Function call interrupts"),
 	S(IPI_CALL_FUNC_SINGLE, "Single function call interrupts"),
 	S(IPI_CPU_STOP, "CPU stop interrupts"),
+	S(IPI_CPU_BACKTRACE, "CPU backtrace"),
 };
 
 void show_ipi_list(struct seq_file *p, int prec)
@@ -454,6 +483,9 @@ static struct local_timer_ops *lt_ops;
 #ifdef CONFIG_LOCAL_TIMERS
 int local_timer_register(struct local_timer_ops *ops)
 {
+	if (!is_smp() || !setup_max_cpus)
+		return -ENXIO;
+
 	if (lt_ops)
 		return -EBUSY;
 
@@ -501,10 +533,14 @@ static void ipi_cpu_stop(unsigned int cpu)
 	    system_state == SYSTEM_RUNNING) {
 		raw_spin_lock(&stop_lock);
 		printk(KERN_CRIT "CPU%u: stopping\n", cpu);
+#ifdef CONFIG_SEC_DEBUG
+		sec_debug_save_context();
+#endif
 		dump_stack();
 		raw_spin_unlock(&stop_lock);
 	}
 
+	flush_cache_all();
 	set_cpu_online(cpu, false);
 
 	local_fiq_disable();
@@ -512,6 +548,58 @@ static void ipi_cpu_stop(unsigned int cpu)
 
 	while (1)
 		cpu_relax();
+}
+
+static cpumask_t backtrace_mask;
+static DEFINE_RAW_SPINLOCK(backtrace_lock);
+
+/* "in progress" flag of arch_trigger_all_cpu_backtrace */
+static unsigned long backtrace_flag;
+
+void smp_send_all_cpu_backtrace(void)
+{
+	unsigned int this_cpu = smp_processor_id();
+	int i;
+
+	if (test_and_set_bit(0, &backtrace_flag))
+		/*
+		 * If there is already a trigger_all_cpu_backtrace() in progress
+		 * (backtrace_flag == 1), don't output double cpu dump infos.
+		 */
+		return;
+
+	cpumask_copy(&backtrace_mask, cpu_online_mask);
+	cpu_clear(this_cpu, backtrace_mask);
+
+	pr_info("Backtrace for cpu %d (current):\n", this_cpu);
+	dump_stack();
+
+	pr_info("\nsending IPI to all other CPUs:\n");
+	smp_cross_call(&backtrace_mask, IPI_CPU_BACKTRACE);
+
+	/* Wait for up to 10 seconds for all other CPUs to do the backtrace */
+	for (i = 0; i < 10 * 1000; i++) {
+		if (cpumask_empty(&backtrace_mask))
+			break;
+		mdelay(1);
+	}
+
+	clear_bit(0, &backtrace_flag);
+	smp_mb__after_clear_bit();
+}
+
+/*
+ * ipi_cpu_backtrace - handle IPI from smp_send_all_cpu_backtrace()
+ */
+static void ipi_cpu_backtrace(unsigned int cpu, struct pt_regs *regs)
+{
+	if (cpu_isset(cpu, backtrace_mask)) {
+		raw_spin_lock(&backtrace_lock);
+		pr_warning("IPI backtrace for cpu %d\n", cpu);
+		show_regs(regs);
+		raw_spin_unlock(&backtrace_lock);
+		cpu_clear(cpu, backtrace_mask);
+	}
 }
 
 /*
@@ -529,6 +617,11 @@ void handle_IPI(int ipinr, struct pt_regs *regs)
 
 	if (ipinr >= IPI_TIMER && ipinr < IPI_TIMER + NR_IPI)
 		__inc_irq_stat(cpu, ipi_irqs[ipinr - IPI_TIMER]);
+
+#ifdef CONFIG_SEC_DEBUG_SCHED_LOG
+	sec_debug_irq_log(ipinr, do_IPI, 1);
+#endif
+	memory_log_irq(ipinr,1);
 
 	switch (ipinr) {
 	case IPI_TIMER:
@@ -559,11 +652,22 @@ void handle_IPI(int ipinr, struct pt_regs *regs)
 		irq_exit();
 		break;
 
+	case IPI_CPU_BACKTRACE:
+		ipi_cpu_backtrace(cpu, regs);
+		break;
+
 	default:
 		printk(KERN_CRIT "CPU%u: Unknown IPI message 0x%x\n",
 		       cpu, ipinr);
 		break;
 	}
+
+	memory_log_irq(ipinr,0);
+
+#ifdef CONFIG_SEC_DEBUG_SCHED_LOG
+	sec_debug_irq_log(ipinr, do_IPI, 2);
+#endif
+
 	set_irq_regs(old_regs);
 }
 
@@ -590,7 +694,8 @@ void smp_send_stop(void)
 
 	cpumask_copy(&mask, cpu_online_mask);
 	cpumask_clear_cpu(smp_processor_id(), &mask);
-	smp_cross_call(&mask, IPI_CPU_STOP);
+	if (!cpumask_empty(&mask))
+		smp_cross_call(&mask, IPI_CPU_STOP);
 
 	/* Wait up to one second for other CPUs to stop */
 	timeout = USEC_PER_SEC;
@@ -601,6 +706,25 @@ void smp_send_stop(void)
 		pr_warning("SMP: failed to stop secondary CPUs\n");
 
 	smp_kill_cpus(&mask);
+}
+
+void smp_send_stop_only(void)
+{
+        unsigned long timeout;
+        struct cpumask mask;
+
+        cpumask_copy(&mask, cpu_online_mask);
+        cpumask_clear_cpu(smp_processor_id(), &mask);
+        smp_cross_call(&mask, IPI_CPU_STOP);
+
+        /* Wait up to one second for other CPUs to stop */
+        timeout = USEC_PER_SEC;
+        while (num_online_cpus() > 1 && timeout--)
+                udelay(1);
+
+        if (num_online_cpus() > 1)
+                pr_warning("SMP: failed to stop secondary CPUs\n");
+
 }
 
 /*

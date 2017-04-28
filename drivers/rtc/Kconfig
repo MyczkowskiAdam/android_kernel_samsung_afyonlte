@@ -106,6 +106,26 @@ config RTC_INTF_DEV_UIE_EMUL
 	  clock several times per second, please enable this option
 	  only if you know that you really need it.
 
+ config RTC_INTF_ALARM
+	bool "Android alarm driver"
+	depends on RTC_CLASS
+	default y
+	help
+          Provides non-wakeup and rtc backed wakeup alarms based on rtc or
+          elapsed realtime, and a non-wakeup alarm on the monotonic clock.
+          Also provides an interface to set the wall time which must be used
+	  for elapsed realtime to work.
+
+ config RTC_INTF_ALARM_DEV
+	bool "Android alarm device"
+	depends on RTC_INTF_ALARM
+	default y
+	help
+	  Exports the alarm interface to user-space.
+          If you are not sure about this, please say y for building
+          this driver. It will provide the alarm interface for user in
+ 	  user side
+
 config RTC_DRV_TEST
 	tristate "Test driver/device"
 	help
@@ -134,6 +154,15 @@ config RTC_DRV_88PM860X
 
 	  This driver can also be built as a module. If so, the module
 	  will be called rtc-88pm860x.
+
+config RTC_DRV_D2153
+	tristate "Dialog Semiconductor D2153"
+	depends on MFD_D2153
+	help
+	   If you say yes here you get support for RTC function of the
+	   Dialog Semiconductor D2153 multifunction device.
+	   This is supported only in 0.5 and above SSG boards.
+	   This driver is automatically selected upon Dialog PMIC selection.
 
 config RTC_DRV_DS1307
 	tristate "Dallas/Maxim DS1307/37/38/39/40, ST M41T00, EPSON RX-8025"
@@ -303,6 +332,25 @@ config RTC_DRV_DM355EVM
 	depends on MFD_DM355EVM_MSP
 	help
 	  Supports the RTC firmware in the MSP430 on the DM355 EVM.
+
+config RTC_DRV_TPS80031
+	tristate "TI TPS80031"
+	depends on MFD_TPS80031
+	default n
+	help
+	  If you say yes here you get support for the TPS80031 RTC module.
+
+	  This driver can also be built as a module. If so, the module
+	  will be called rtc-tps6591x.
+
+ config RTC_DRV_TPS80032
+	tristate "TPS80032 RTC driver"
+	default n
+	help
+	  This is a driver for TPS80032 chip to be used as a RTC.
+          This driver can also be built as a module. If so, the module
+	  will be called rtc-tps80032. If you are not sure about this,
+	  please say n for not building this driver.
 
 config RTC_DRV_TWL92330
 	boolean "TI TWL92330/Menelaus"

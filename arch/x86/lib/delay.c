@@ -91,7 +91,7 @@ static void delay_tsc(unsigned long __loops)
  * Since we calibrate only once at boot, this
  * function should be set once at boot and not changed
  */
-static void (*delay_fn)(unsigned long) = delay_loop;
+//static void (*delay_fn)(unsigned long) = delay_loop;
 
 void use_tsc_delay(void)
 {

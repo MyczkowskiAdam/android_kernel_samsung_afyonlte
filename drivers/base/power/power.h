@@ -1,3 +1,8 @@
+/*
+ * drivers/base/power/power.h
+ *
+ * Copyright (C) 2012 Renesas Mobile Corporation
+ */
 #include <linux/pm_qos.h>
 
 #ifdef CONFIG_PM_RUNTIME
@@ -85,3 +90,7 @@ static inline int pm_qos_sysfs_add(struct device *dev) { return 0; }
 static inline void pm_qos_sysfs_remove(struct device *dev) {}
 
 #endif
+
+#ifdef CONFIG_ARCH_R8A7373
+extern int has_wake_lock_no_expire(int type);
+#endif /* CONFIG_ARCH_R8A7373 */

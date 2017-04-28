@@ -45,6 +45,10 @@
 #include <asm/mach/irq.h>
 #include <asm/hardware/gic.h>
 
+#ifndef CONFIG_ARM_TZ
+#define CONFIG_GIC_NS
+#endif /* CONFIG_ARM_TZ */
+
 union gic_base {
 	void __iomem *common_base;
 	void __percpu __iomem **percpu_base;
@@ -363,6 +367,12 @@ static void __init gic_dist_init(struct gic_chip_data *gic)
 	for (i = 32; i < gic_irqs; i += 16)
 		writel_relaxed(0, base + GIC_DIST_CONFIG + i * 4 / 16);
 
+#ifdef CONFIG_GIC_NS
+#define GIC_DIST_ISR                    0x080
+	for (i = 32; i < gic_irqs; i += 32)
+		writel_relaxed(0xffffffff, base + GIC_DIST_ISR + i * 4 / 32);
+#endif
+
 	/*
 	 * Set all global interrupts to this CPU only.
 	 */
@@ -382,7 +392,11 @@ static void __init gic_dist_init(struct gic_chip_data *gic)
 	for (i = 32; i < gic_irqs; i += 32)
 		writel_relaxed(0xffffffff, base + GIC_DIST_ENABLE_CLEAR + i * 4 / 32);
 
+#ifdef CONFIG_GIC_NS
+	writel_relaxed(3, base + GIC_DIST_CTRL);
+#else
 	writel_relaxed(1, base + GIC_DIST_CTRL);
+#endif
 }
 
 static void __cpuinit gic_cpu_init(struct gic_chip_data *gic)
@@ -390,6 +404,13 @@ static void __cpuinit gic_cpu_init(struct gic_chip_data *gic)
 	void __iomem *dist_base = gic_data_dist_base(gic);
 	void __iomem *base = gic_data_cpu_base(gic);
 	int i;
+
+#ifdef CONFIG_GIC_NS
+	for (i = 0; i < 32; i += 32)
+		writel_relaxed(0xffffffff, dist_base + GIC_DIST_ISR + i * 4 / 32);
+		i=0;    //SWI 0 is Secure->FIQ
+		writel_relaxed(0xfffffffe, dist_base + GIC_DIST_ISR + i * 4 / 32);
+#endif
 
 	/*
 	 * Deal with the banked PPI and SGI interrupts - disable all
@@ -405,7 +426,11 @@ static void __cpuinit gic_cpu_init(struct gic_chip_data *gic)
 		writel_relaxed(0xa0a0a0a0, dist_base + GIC_DIST_PRI + i * 4 / 4);
 
 	writel_relaxed(0xf0, base + GIC_CPU_PRIMASK);
+#ifdef CONFIG_GIC_NS
+	writel_relaxed(0x1F, base + GIC_CPU_CTRL);
+#else
 	writel_relaxed(1, base + GIC_CPU_CTRL);
+#endif
 }
 
 #ifdef CONFIG_CPU_PM
@@ -746,7 +771,11 @@ void gic_raise_softirq(const struct cpumask *mask, unsigned int irq)
 	dsb();
 
 	/* this always happens on GIC0 */
+#ifdef CONFIG_GIC_NS
+	writel_relaxed((map << 16) | irq | (1<<15), gic_data_dist_base(&gic_data[0]) + GIC_DIST_SOFTINT);
+#else
 	writel_relaxed(map << 16 | irq, gic_data_dist_base(&gic_data[0]) + GIC_DIST_SOFTINT);
+#endif
 }
 #endif
 
@@ -780,5 +809,6 @@ int __init gic_of_init(struct device_node *node, struct device_node *parent)
 	}
 	gic_cnt++;
 	return 0;
+>>>>>>> 380d0d4fdbde2c599d0af289a119007a679d6fcf
 }
 #endif

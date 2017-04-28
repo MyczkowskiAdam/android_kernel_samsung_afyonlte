@@ -1,6 +1,7 @@
 /*
  *  Sysfs interface for the universal power supply monitor class
  *
+ *  Copyright © 2012  Renesas Mobile Corporation
  *  Copyright © 2007  David Woodhouse <dwmw2@infradead.org>
  *  Copyright © 2007  Anton Vorontsov <cbou@mail.ru>
  *  Copyright © 2004  Szabolcs Gyurko
@@ -145,6 +146,9 @@ static struct device_attribute power_supply_attrs[] = {
 	POWER_SUPPLY_ATTR(voltage_max_design),
 	POWER_SUPPLY_ATTR(voltage_min_design),
 	POWER_SUPPLY_ATTR(voltage_now),
+#ifdef CONFIG_BATTERY_D2153
+	POWER_SUPPLY_ATTR(batt_vol_adc),	
+#endif	
 	POWER_SUPPLY_ATTR(voltage_avg),
 	POWER_SUPPLY_ATTR(current_max),
 	POWER_SUPPLY_ATTR(current_now),
@@ -168,12 +172,20 @@ static struct device_attribute power_supply_attrs[] = {
 	POWER_SUPPLY_ATTR(capacity_level),
 	POWER_SUPPLY_ATTR(temp),
 	POWER_SUPPLY_ATTR(temp_ambient),
+#if defined(CONFIG_PMIC_BAT_INTERFACE) || defined(CONFIG_BATTERY_D2153)
+	POWER_SUPPLY_ATTR(temp_hpa),
+#endif
+	POWER_SUPPLY_ATTR(batt_temp_adc),
 	POWER_SUPPLY_ATTR(time_to_empty_now),
 	POWER_SUPPLY_ATTR(time_to_empty_avg),
 	POWER_SUPPLY_ATTR(time_to_full_now),
 	POWER_SUPPLY_ATTR(time_to_full_avg),
 	POWER_SUPPLY_ATTR(type),
 	POWER_SUPPLY_ATTR(scope),
+	/* Local extensions */
+	POWER_SUPPLY_ATTR(usb_hc),
+	POWER_SUPPLY_ATTR(usb_otg),
+	POWER_SUPPLY_ATTR(charge_enabled),
 	/* Properties of type `const char *' */
 	POWER_SUPPLY_ATTR(model_name),
 	POWER_SUPPLY_ATTR(manufacturer),
@@ -279,8 +291,9 @@ int power_supply_uevent(struct device *dev, struct kobj_uevent_env *env)
 
 		ret = power_supply_show_property(dev, attr, prop_buf);
 		if (ret == -ENODEV || ret == -ENODATA) {
-			/* When a battery is absent, we expect -ENODEV. Don't abort;
-			   send the uevent with at least the the PRESENT=0 property */
+			/* When a battery is absent, we expect -ENODEV.
+			 * Don't abort; Send the uevent with at least the
+			 * the PRESENT=0 property */
 			ret = 0;
 			continue;
 		}
@@ -300,7 +313,8 @@ int power_supply_uevent(struct device *dev, struct kobj_uevent_env *env)
 
 		dev_dbg(dev, "prop %s=%s\n", attrname, prop_buf);
 
-		ret = add_uevent_var(env, "POWER_SUPPLY_%s=%s", attrname, prop_buf);
+		ret = add_uevent_var(env, "POWER_SUPPLY_%s=%s",
+					attrname, prop_buf);
 		kfree(attrname);
 		if (ret)
 			goto out;

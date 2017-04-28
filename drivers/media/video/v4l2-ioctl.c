@@ -1275,8 +1275,10 @@ static long __video_do_ioctl(struct file *file,
 
 		if (vfh && vfh->ctrl_handler)
 			ret = v4l2_g_ctrl(vfh->ctrl_handler, p);
+/*
 		else if (vfd->ctrl_handler)
 			ret = v4l2_g_ctrl(vfd->ctrl_handler, p);
+*/
 		else if (ops->vidioc_g_ctrl)
 			ret = ops->vidioc_g_ctrl(file, fh, p);
 		else if (ops->vidioc_g_ext_ctrls) {
@@ -1321,10 +1323,12 @@ static long __video_do_ioctl(struct file *file,
 			ret = v4l2_s_ctrl(vfh, vfh->ctrl_handler, p);
 			break;
 		}
+/*
 		if (vfd->ctrl_handler) {
 			ret = v4l2_s_ctrl(NULL, vfd->ctrl_handler, p);
 			break;
 		}
+*/
 		if (ops->vidioc_s_ctrl) {
 			ret = ops->vidioc_s_ctrl(file, fh, p);
 			break;

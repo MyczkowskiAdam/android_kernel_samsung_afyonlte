@@ -18,6 +18,7 @@
     defined(CONFIG_ARCH_SH7367) || \
     defined(CONFIG_ARCH_SH7377) || \
     defined(CONFIG_ARCH_SH7372) || \
+    defined(CONFIG_ARCH_R8A7373) || \
     defined(CONFIG_ARCH_R8A7740)
 
 # define SCxSR_RDxF_CLEAR(port)	 (serial_port_in(port, SCxSR) & 0xfffc)

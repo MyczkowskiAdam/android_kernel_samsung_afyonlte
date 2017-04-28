@@ -79,6 +79,10 @@
 #include <asm/smp.h>
 #endif
 
+#ifdef CONFIG_SEC_GPIO_DVS
+#include <linux/secgpio_dvs.h>
+#endif
+
 static int kernel_init(void *);
 
 extern void init_IRQ(void);
@@ -462,10 +466,24 @@ static void __init mm_init(void)
 	vmalloc_init();
 }
 
+/* To verify if TrustZone Environment is enabled */
+static int isTrustZoneEnvironmentEnabled(void)
+{
+#ifdef CONFIG_ARM_TZ
+	return 1;
+#else
+	return 0;
+#endif
+}
+
 asmlinkage void __init start_kernel(void)
 {
 	char * command_line;
 	extern const struct kernel_param __start___param[], __stop___param[];
+	if (isTrustZoneEnvironmentEnabled())
+		printk(KERN_NOTICE "TRUST ZONE ENABLED");
+	else
+		printk(KERN_NOTICE "TRUST ZONE DISABLED");
 
 	/*
 	 * Need to run as early as possible, to initialize the
@@ -797,6 +815,15 @@ static void run_init_process(const char *init_filename)
  */
 static noinline int init_post(void)
 {
+#ifdef CONFIG_SEC_GPIO_DVS
+	/************************ Caution !!! ****************************/
+	/* This function must be located in an appropriate position for INIT state
+	 * in accordance with the specification of each BB vendor.
+	 */
+	/************************ Caution !!! ****************************/
+	gpio_dvs_check_initgpio();
+#endif
+
 	/* need to finish all async __init code before freeing the memory */
 	async_synchronize_full();
 	free_initmem();

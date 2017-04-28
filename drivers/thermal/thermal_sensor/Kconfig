@@ -1,0 +1,42 @@
+menu "Temperature module (Renesas)"
+config THERMAL_SENSOR
+	bool "Enable Thermal Sensor driver"
+	depends on ARCH_SHMOBILE
+	default n
+	help
+	  Temperature module is used to measure temperature inside LSI.
+	  It also has some temperature control methods (such as using DFS,
+	  stopping CPU1, raising a software power-on reset). For using these
+	  methods, please enable corresponding macros.
+
+	menu "Select temperature control method"
+	depends on THERMAL_SENSOR
+
+	config THS_DFS
+		bool "Enable DFS"
+		default y
+		help
+		  Enable DFS for temperature control (Limit maximum frequency of CPU0).
+
+	config THS_CPU_HOTPLUG
+		bool "Enable CPU_HOTPLUG"
+		default y
+		help
+		  Enable CPU_HOTPLUG for temperature control (Stop CPU1).
+
+	config THS_RESET
+		bool "Enable Reset"
+		default y
+		help
+		  Enable software power-on reset for temperature control.
+
+	endmenu
+
+config THS_DEBUG_ENABLE
+	bool "Debug information for Thermal Sensor driver"
+	depends on THERMAL_SENSOR
+	default n
+	help
+		This config helps to print debug information in terminal.
+
+endmenu

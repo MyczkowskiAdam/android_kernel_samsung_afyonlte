@@ -84,6 +84,11 @@ config USB_ARCH_HAS_HCD
 	default y if SUPERH				# r8a66597-hcd
 	default PCI
 
+# Config to enable samsung specific MTP f_mtp_samsung
+config USB_MTP_SAMSUNG
+	boolean "MTP SAMSUNG"
+	default n
+
 # ARM SA1111 chips have a non-PCI based "OHCI-compatible" USB host interface.
 config USB
 	tristate "Support for Host-side USB"

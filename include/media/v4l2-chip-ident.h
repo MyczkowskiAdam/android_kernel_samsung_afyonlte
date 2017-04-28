@@ -4,6 +4,9 @@
     This header provides a list of chip identifiers that can be returned
     through the VIDIOC_DBG_G_CHIP_IDENT ioctl.
 
+	Copyright (C) 2012 Renesas Mobile Corp.
+	All rights reserved.
+
     Copyright (C) 2007 Hans Verkuil <hverkuil@xs4all.nl>
 
     This program is free software; you can redistribute it and/or modify
@@ -325,6 +328,27 @@ enum {
 
 	/* module upd64083: just ident 64083 */
 	V4L2_IDENT_UPD64083 = 64083,
+
+	/* Omnivision */
+	V4L2_IDENT_OV8820 = 100000,
+	V4L2_IDENT_OV5640 = 100001,
+
+	/* Sony */
+	V4L2_IDENT_IMX081 = 100010,
+	V4L2_IDENT_IMX175 = 100011,
+	V4L2_IDENT_ISX012 = 100012,
+
+	/* Samsung S5K6AAFX13 */
+	V4L2_IDENT_S5K6AAFX13 = 100020,
+	V4L2_IDENT_S5K4ECGX = 100030,
+
+	/* Dongbu Hitek DB8131 */
+	V4L2_IDENT_DB8131 = 100021,
+	/* Siliconfile SR030PC50 */
+	V4L2_IDENT_SR030PC50 = 100022,
+	V4L2_IDENT_SR130PC20 = 100023,
+	V4L2_IDENT_SR200PC20M = 100024,
+	V4L2_IDENT_SR352 = 100025,
 
 	/* Don't just add new IDs at the end: KEEP THIS LIST ORDERED BY ID! */
 };

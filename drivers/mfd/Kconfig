@@ -5,6 +5,27 @@
 if HAS_IOMEM
 menu "Multifunction device drivers"
 
+config MFD_D2153
+	tristate "Dialog D2153 Multifunction DEvice"
+	select I2C
+	select MFD_CORE
+	select RTC_CLASS
+	select REGULATOR
+	select POWER_SUPPLY
+	select MISC_DEVICES
+	select INPUT_MISC
+	select INPUT_D2153_ONKEY
+	select REGULATOR_D2153
+	select RTC_DRV_D2153
+	select SENSORS_D2153
+	select MFD_D2153_BRINGUP_RECHECK
+	help
+	  This supports the Dialog D2153 Multifunction Device
+
+config MFD_D2153_BRINGUP_RECHECK
+	tristate "BringUp recheck"
+	depends on MFD_D2153
+
 config MFD_CORE
 	tristate
 	default n
@@ -203,6 +224,24 @@ config MFD_TPS65912_SPI
 	help
 	  If you say yes here you get support for the TPS65912 series of
 	  PM chips with SPI interface.
+
+config MFD_TPS80031
+	bool "TI TPS80031 Power Management chips"
+	depends on I2C && GPIOLIB && GENERIC_HARDIRQS
+	select MFD_CORE
+	help
+	  If you say yes here you get support for the TPS80031 Power
+	  Management chips.
+	  This driver provides common support for accessing the device,
+	  additional drivers must be enabled in order to use the
+	  functionality of the device.
+
+config GPADC_TPS80031
+	bool "Support for TI TPS80031 Gpadc driver"
+	depends on  MFD_TPS80031
+	help
+	  If you say yes here you get support for the TPS80031 gpadc
+	  Module.
 
 config MENELAUS
 	bool "Texas Instruments TWL92330/Menelaus PM chip"
@@ -784,6 +823,7 @@ config MFD_VX855
 	  Say yes here to enable support for various functions of the
 	  VIA VX855/VX875 south bridge. You will need to enable the vx855_spi
 	  and/or vx855_gpio drivers for this to do anything useful.
+source "drivers/mfd/richtek/Kconfig"
 
 config MFD_WL1273_CORE
 	tristate "Support for TI WL1273 FM radio."

@@ -122,7 +122,7 @@ static void intc_virq_handler(unsigned int irq, struct irq_desc *desc)
 		handle = (unsigned long)irq_get_handler_data(entry->irq);
 		addr = INTC_REG(d, _INTC_ADDR_E(handle), 0);
 
-		if (intc_reg_fns[_INTC_FN(handle)](addr, handle, 0))
+		if (intc_reg_fns[_INTC_FN(handle)](addr, handle, 0, &d->lock))
 			generic_handle_irq(entry->irq);
 	}
 

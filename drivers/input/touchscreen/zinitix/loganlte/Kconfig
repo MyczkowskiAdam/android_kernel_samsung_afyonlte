@@ -1,0 +1,12 @@
+#
+# ZINITIX Touchscreen driver configuration
+#
+
+config TOUCHSCREEN_BT432
+	tristate "ZINITIX touchscreen driver"
+	depends on I2C
+	help
+	  Say Y here if you have a ZINITIX touchscreen.
+
+	  If unsure, say N.
+

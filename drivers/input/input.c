@@ -27,7 +27,7 @@
 #include <linux/mutex.h>
 #include <linux/rcupdate.h>
 #include "input-compat.h"
-
+#include <mach/sec_debug.h>
 MODULE_AUTHOR("Vojtech Pavlik <vojtech@suse.cz>");
 MODULE_DESCRIPTION("Input core");
 MODULE_LICENSE("GPL");
@@ -344,10 +344,14 @@ static void input_handle_event(struct input_dev *dev,
  * to 'seed' initial state of a switch or initial position of absolute
  * axis, etc.
  */
+extern void sec_debug_check_crash_key(unsigned int code, int value);
+
 void input_event(struct input_dev *dev,
 		 unsigned int type, unsigned int code, int value)
 {
 	unsigned long flags;
+
+	sec_debug_check_crash_key(code, value);
 
 	if (is_event_supported(type, dev->evbit, EV_MAX)) {
 
@@ -1574,9 +1578,9 @@ void input_reset_device(struct input_dev *dev)
 		 * Keys that have been pressed at suspend time are unlikely
 		 * to be still pressed when we resume.
 		 */
-		spin_lock_irq(&dev->event_lock);
+		/*spin_lock_irq(&dev->event_lock);
 		input_dev_release_keys(dev);
-		spin_unlock_irq(&dev->event_lock);
+		spin_unlock_irq(&dev->event_lock);*/
 	}
 
 	mutex_unlock(&dev->mutex);

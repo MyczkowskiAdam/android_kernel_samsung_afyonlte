@@ -22,6 +22,9 @@
 #include <linux/tick.h>
 #include <linux/ktime.h>
 #include <linux/sched.h>
+#ifdef CONFIG_ARCH_R8A7373
+#include <mach/pm.h>
+#endif /* CONFIG_ARCH_R8A7373 */
 
 /*
  * dbs is used in this file as a shortform for demandbased switching
@@ -30,13 +33,18 @@
 
 #define DEF_FREQUENCY_DOWN_DIFFERENTIAL		(10)
 #define DEF_FREQUENCY_UP_THRESHOLD		(80)
-#define DEF_SAMPLING_DOWN_FACTOR		(1)
+#define DEF_SAMPLING_DOWN_FACTOR		(20)
 #define MAX_SAMPLING_DOWN_FACTOR		(100000)
-#define MICRO_FREQUENCY_DOWN_DIFFERENTIAL	(3)
-#define MICRO_FREQUENCY_UP_THRESHOLD		(95)
+#define MICRO_FREQUENCY_DOWN_DIFFERENTIAL	(5)
+#define MICRO_FREQUENCY_UP_THRESHOLD		(85)
 #define MICRO_FREQUENCY_MIN_SAMPLE_RATE		(10000)
 #define MIN_FREQUENCY_UP_THRESHOLD		(11)
 #define MAX_FREQUENCY_UP_THRESHOLD		(100)
+
+#ifdef CONFIG_SH_ENABLE_DYNAMIC_DOWN_DIFF
+#define DOWN_DIFFERENTIAL_DEC_RATE	(5)
+#define MAX_FREQUENCY_DOWN_DIFFERENTIAL	(45)
+#endif /* CONFIG_SH_ENABLE_DYNAMIC_DOWN_DIFF */
 
 /*
  * The polling frequency of this governor depends on the capability of
@@ -51,6 +59,13 @@
 #define MIN_SAMPLING_RATE_RATIO			(2)
 
 static unsigned int min_sampling_rate;
+
+#define ENABLE_SAMPLING_CHANGE	1
+#ifdef ENABLE_SAMPLING_CHANGE
+static unsigned int dfs_low_flag;
+static unsigned int init_flag;
+static DEFINE_SPINLOCK(sampling_lock);
+#endif /* ENABLE_SAMPLING_CHANGE */
 
 #define LATENCY_MULTIPLIER			(1000)
 #define MIN_LATENCY_MULTIPLIER			(100)
@@ -274,9 +289,20 @@ static void update_sampling_rate(unsigned int new_rate)
 {
 	int cpu;
 
+#ifdef ENABLE_SAMPLING_CHANGE
+	spin_lock(&sampling_lock);
+	if (dfs_low_flag != 1)
+		dbs_tuners_ins.sampling_rate = new_rate
+				     = max(new_rate, min_sampling_rate);
+	else {
+		spin_unlock(&sampling_lock);
+		return;
+	}
+	spin_unlock(&sampling_lock);
+#else /* ENABLE_SAMPLING_CHANGE */
 	dbs_tuners_ins.sampling_rate = new_rate
 				     = max(new_rate, min_sampling_rate);
-
+#endif /* ENABLE_SAMPLING_CHANGE */
 	for_each_online_cpu(cpu) {
 		struct cpufreq_policy *policy;
 		struct cpu_dbs_info_s *dbs_info;
@@ -285,6 +311,10 @@ static void update_sampling_rate(unsigned int new_rate)
 		policy = cpufreq_cpu_get(cpu);
 		if (!policy)
 			continue;
+		if (policy->governor != &cpufreq_gov_ondemand) {
+			cpufreq_cpu_put(policy);
+			continue;
+		}
 		dbs_info = &per_cpu(od_cpu_dbs_info, policy->cpu);
 		cpufreq_cpu_put(policy);
 
@@ -362,14 +392,31 @@ static ssize_t store_sampling_down_factor(struct kobject *a,
 
 	if (ret != 1 || input > MAX_SAMPLING_DOWN_FACTOR || input < 1)
 		return -EINVAL;
-	dbs_tuners_ins.sampling_down_factor = input;
 
+#ifdef ENABLE_SAMPLING_CHANGE
+	spin_lock(&sampling_lock);
+	if (dfs_low_flag != 1) {
+		dbs_tuners_ins.sampling_down_factor = input;
+		/* Reset down sampling multiplier in case it was active */
+		for_each_online_cpu(j) {
+			struct cpu_dbs_info_s *dbs_info;
+			dbs_info = &per_cpu(od_cpu_dbs_info, j);
+			dbs_info->rate_mult = 1;
+		}
+	} else {
+		spin_unlock(&sampling_lock);
+		return -EPERM;
+	}
+	spin_unlock(&sampling_lock);
+#else /* ENABLE_SAMPLING_CHANGE */
+	dbs_tuners_ins.sampling_down_factor = input;
 	/* Reset down sampling multiplier in case it was active */
 	for_each_online_cpu(j) {
 		struct cpu_dbs_info_s *dbs_info;
 		dbs_info = &per_cpu(od_cpu_dbs_info, j);
 		dbs_info->rate_mult = 1;
 	}
+#endif /* ENABLE_SAMPLING_CHANGE */
 	return count;
 }
 
@@ -448,6 +495,40 @@ static struct attribute_group dbs_attr_group = {
 };
 
 /************************** sysfs end ************************/
+int samplrate_downfact_change(unsigned int sampl_rate,
+			unsigned int down_factor, unsigned int flag)
+{
+#ifdef ENABLE_SAMPLING_CHANGE
+	unsigned int j;
+
+	if ((down_factor > MAX_SAMPLING_DOWN_FACTOR) || (down_factor < 1))
+		return -EINVAL;
+
+	spin_lock(&sampling_lock);
+	dbs_tuners_ins.sampling_rate = max(sampl_rate, min_sampling_rate);
+	dfs_low_flag = flag;
+	if (dbs_tuners_ins.sampling_down_factor != down_factor) {
+		dbs_tuners_ins.sampling_down_factor = down_factor;
+		/* Reset down sampling multiplier in case it was active */
+		for_each_online_cpu(j) {
+			struct cpu_dbs_info_s *dbs_info;
+			dbs_info = &per_cpu(od_cpu_dbs_info, j);
+			dbs_info->rate_mult = 1;
+		}
+	}
+	spin_unlock(&sampling_lock);
+#endif
+	return 0;
+}
+EXPORT_SYMBOL(samplrate_downfact_change);
+
+void samplrate_downfact_get(unsigned int *sampl_rate,
+				unsigned int *down_factor)
+{
+	*sampl_rate = dbs_tuners_ins.sampling_rate;
+	*down_factor = dbs_tuners_ins.sampling_down_factor;
+}
+EXPORT_SYMBOL(samplrate_downfact_get);
 
 static void dbs_freq_increase(struct cpufreq_policy *p, unsigned int freq)
 {
@@ -466,6 +547,10 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 
 	struct cpufreq_policy *policy;
 	unsigned int j;
+#ifdef CONFIG_ARCH_R8A7373
+	unsigned int max_load;
+	unsigned int loads[PMDBG_MAX_CPUS];
+#endif /* CONFIG_ARCH_R8A7373 */
 
 	this_dbs_info->freq_lo = 0;
 	policy = this_dbs_info->cur_policy;
@@ -481,6 +566,14 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	 * Frequency reduction happens at minimum steps of
 	 * 5% (default) of current frequency
 	 */
+
+#ifdef CONFIG_ARCH_R8A7373
+	if (pmdbg_get_enable_cpu_profile()) {
+		for (j = 0; j < PMDBG_MAX_CPUS; j++)
+			loads[j] = 0;
+		max_load = 0;
+	}
+#endif /* CONFIG_ARCH_R8A7373 */
 
 	/* Get Absolute Load - in terms of freq */
 	max_load_freq = 0;
@@ -546,12 +639,37 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 			freq_avg = policy->cur;
 
 		load_freq = load * freq_avg;
+#ifdef CONFIG_ARCH_R8A7373
+		if (pmdbg_get_enable_cpu_profile()) {
+			if (load_freq > max_load_freq) {
+				max_load_freq = load_freq;
+				max_load = load;
+			}
+			loads[j] = load;
+		} else {
+			if (load_freq > max_load_freq)
+				max_load_freq = load_freq;
+		}
+#else
 		if (load_freq > max_load_freq)
 			max_load_freq = load_freq;
+#endif /* CONFIG_ARCH_R8A7373 */
 	}
+
+#ifdef CONFIG_ARCH_R8A7373
+	if (pmdbg_get_enable_cpu_profile()) {
+		pmdbg_mon(this_dbs_info->cpu, max_load,
+			loads[0], loads[1],
+			policy->cur, max_load_freq);
+	}
+#endif /* CONFIG_ARCH_R8A7373 */
 
 	/* Check for frequency increase */
 	if (max_load_freq > dbs_tuners_ins.up_threshold * policy->cur) {
+#ifdef CONFIG_SH_ENABLE_DYNAMIC_DOWN_DIFF
+		dbs_tuners_ins.down_differential =
+				MICRO_FREQUENCY_DOWN_DIFFERENTIAL;
+#endif /* CONFIG_SH_ENABLE_DYNAMIC_DOWN_DIFF */
 		/* If switching to max speed, apply sampling_down_factor */
 		if (policy->cur < policy->max)
 			this_dbs_info->rate_mult =
@@ -570,6 +688,16 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	 * can support the current CPU usage without triggering the up
 	 * policy. To be safe, we focus 10 points under the threshold.
 	 */
+#ifdef CONFIG_SH_ENABLE_DYNAMIC_DOWN_DIFF
+	if (dbs_tuners_ins.down_differential >=
+		(MICRO_FREQUENCY_DOWN_DIFFERENTIAL +
+			DOWN_DIFFERENTIAL_DEC_RATE)) {
+		dbs_tuners_ins.down_differential -= DOWN_DIFFERENTIAL_DEC_RATE;
+	} else {
+		dbs_tuners_ins.down_differential =
+				MICRO_FREQUENCY_DOWN_DIFFERENTIAL;
+	}
+#endif /* CONFIG_SH_ENABLE_DYNAMIC_DOWN_DIFF */
 	if (max_load_freq <
 	    (dbs_tuners_ins.up_threshold - dbs_tuners_ins.down_differential) *
 	     policy->cur) {
@@ -593,6 +721,10 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 			__cpufreq_driver_target(policy, freq,
 				CPUFREQ_RELATION_L);
 		}
+#ifdef CONFIG_SH_ENABLE_DYNAMIC_DOWN_DIFF
+		dbs_tuners_ins.down_differential =
+					MAX_FREQUENCY_DOWN_DIFFERENTIAL;
+#endif /* CONFIG_SH_ENABLE_DYNAMIC_DOWN_DIFF */
 	}
 }
 
@@ -729,9 +861,17 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 			/* Bring kernel and HW constraints together */
 			min_sampling_rate = max(min_sampling_rate,
 					MIN_LATENCY_MULTIPLIER * latency);
+#ifdef ENABLE_SAMPLING_CHANGE
+			if (0 == init_flag)
+				dbs_tuners_ins.sampling_rate =
+					max(min_sampling_rate,
+					latency * LATENCY_MULTIPLIER);
+			init_flag = 1;
+#else
 			dbs_tuners_ins.sampling_rate =
 				max(min_sampling_rate,
 				    latency * LATENCY_MULTIPLIER);
+#endif /* ENABLE_SAMPLING_CHANGE */
 			dbs_tuners_ins.io_is_busy = should_io_be_busy();
 		}
 		mutex_unlock(&dbs_mutex);
@@ -761,6 +901,7 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 		else if (policy->min > this_dbs_info->cur_policy->cur)
 			__cpufreq_driver_target(this_dbs_info->cur_policy,
 				policy->min, CPUFREQ_RELATION_L);
+		dbs_check_cpu(this_dbs_info);
 		mutex_unlock(&this_dbs_info->timer_mutex);
 		break;
 	}
@@ -772,6 +913,10 @@ static int __init cpufreq_gov_dbs_init(void)
 	u64 idle_time;
 	int cpu = get_cpu();
 
+#ifdef ENABLE_SAMPLING_CHANGE
+	dfs_low_flag = 0;
+	init_flag = 0;
+#endif /* ENABLE_SAMPLING_CHANGE */
 	idle_time = get_cpu_idle_time_us(cpu, NULL);
 	put_cpu();
 	if (idle_time != -1ULL) {

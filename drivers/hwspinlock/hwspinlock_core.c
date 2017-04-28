@@ -2,6 +2,7 @@
  * Hardware spinlock framework
  *
  * Copyright (C) 2010 Texas Instruments Incorporated - http://www.ti.com
+ * Copyright (C) 2013 Renesas Mobile Corp.
  *
  * Contact: Ohad Ben-Cohen <ohad@wizery.com>
  *
@@ -89,8 +90,10 @@ int __hwspin_trylock(struct hwspinlock *hwlock, int mode, unsigned long *flags)
 {
 	int ret;
 
-	BUG_ON(!hwlock);
-	BUG_ON(!flags && mode == HWLOCK_IRQSTATE);
+	if (!hwlock)
+		return -EINVAL;
+	if ((!flags) && (mode == HWLOCK_IRQSTATE))
+		return -EINVAL;
 
 	/*
 	 * This spin_lock{_irq, _irqsave} serves three purposes:
@@ -130,6 +133,9 @@ int __hwspin_trylock(struct hwspinlock *hwlock, int mode, unsigned long *flags)
 
 		return -EBUSY;
 	}
+
+	if (mode == HWLOCK_NOSPIN)
+		spin_unlock(&hwlock->lock);
 
 	/*
 	 * We can be sure the other core's memory operations
@@ -185,16 +191,19 @@ int __hwspin_lock_timeout(struct hwspinlock *hwlock, unsigned int to,
 	for (;;) {
 		/* Try to take the hwspinlock */
 		ret = __hwspin_trylock(hwlock, mode, flags);
-		if (ret != -EBUSY)
+		if (ret == 0)
 			break;
 
 		/*
 		 * The lock is already taken, let's check if the user wants
 		 * us to try again
 		 */
-		if (time_is_before_eq_jiffies(expire))
+		if (time_is_before_eq_jiffies(expire)) {
+			dev_err(hwlock->bank->dev,
+				"Timed out to lock hwspinlock %d in %d msecs\n",
+				hwlock_to_id(hwlock), to);
 			return -ETIMEDOUT;
-
+		}
 		/*
 		 * Allow platform-specific relax handlers to prevent
 		 * hogging the interconnect (no sleeping, though)
@@ -228,6 +237,7 @@ EXPORT_SYMBOL_GPL(__hwspin_lock_timeout);
  */
 void __hwspin_unlock(struct hwspinlock *hwlock, int mode, unsigned long *flags)
 {
+
 	BUG_ON(!hwlock);
 	BUG_ON(!flags && mode == HWLOCK_IRQSTATE);
 
@@ -245,6 +255,8 @@ void __hwspin_unlock(struct hwspinlock *hwlock, int mode, unsigned long *flags)
 	 */
 	mb();
 
+	if (mode == HWLOCK_NOSPIN)
+		spin_lock(&hwlock->lock);
 	hwlock->bank->ops->unlock(hwlock);
 
 	/* Undo the spin_trylock{_irq, _irqsave} called while locking */
@@ -256,6 +268,24 @@ void __hwspin_unlock(struct hwspinlock *hwlock, int mode, unsigned long *flags)
 		spin_unlock(&hwlock->lock);
 }
 EXPORT_SYMBOL_GPL(__hwspin_unlock);
+
+u32 __hwspin_get_hwlock_id(struct hwspinlock *hwlock, int mode, unsigned long *flags)
+{
+	unsigned int id;
+
+	if (mode == HWLOCK_NOSPIN) {
+		spin_lock(&hwlock->lock);
+	}
+
+	id = hwlock->bank->ops->get_lock_id(hwlock);
+
+	if (mode == HWLOCK_NOSPIN) {
+		spin_unlock(&hwlock->lock);
+	}
+
+	return id;
+}
+EXPORT_SYMBOL_GPL(__hwspin_get_hwlock_id);
 
 static int hwspin_lock_register_single(struct hwspinlock *hwlock, int id)
 {
@@ -404,7 +434,7 @@ static int __hwspin_lock_request(struct hwspinlock *hwlock)
 {
 	struct device *dev = hwlock->bank->dev;
 	struct hwspinlock *tmp;
-	int ret;
+	int ret = 0;
 
 	/* prevent underlying implementation from being removed */
 	if (!try_module_get(dev->driver->owner)) {
@@ -412,12 +442,14 @@ static int __hwspin_lock_request(struct hwspinlock *hwlock)
 		return -EINVAL;
 	}
 
+#ifdef CONFIG_HWSPINLOCK_PM
 	/* notify PM core that power is now needed */
 	ret = pm_runtime_get_sync(dev);
 	if (ret < 0) {
 		dev_err(dev, "%s: can't power on device\n", __func__);
 		return ret;
 	}
+#endif
 
 	/* mark hwspinlock as used, should not fail */
 	tmp = radix_tree_tag_clear(&hwspinlock_tree, hwlock_to_id(hwlock),
@@ -552,15 +584,15 @@ EXPORT_SYMBOL_GPL(hwspin_lock_request_specific);
  */
 int hwspin_lock_free(struct hwspinlock *hwlock)
 {
-	struct device *dev = hwlock->bank->dev;
+	struct device *dev = NULL;
 	struct hwspinlock *tmp;
 	int ret;
 
-	if (!hwlock) {
+	if (NULL == hwlock) {
 		pr_err("invalid hwlock\n");
 		return -EINVAL;
 	}
-
+	dev = hwlock->bank->dev;
 	mutex_lock(&hwspinlock_tree_lock);
 
 	/* make sure the hwspinlock is used */
@@ -573,10 +605,12 @@ int hwspin_lock_free(struct hwspinlock *hwlock)
 		goto out;
 	}
 
+#ifdef CONFIG_HWSPINLOCK_PM
 	/* notify the underlying device that power is not needed */
 	ret = pm_runtime_put(dev);
 	if (ret < 0)
 		goto out;
+#endif
 
 	/* mark this hwspinlock as available */
 	tmp = radix_tree_tag_set(&hwspinlock_tree, hwlock_to_id(hwlock),

@@ -31,7 +31,7 @@
 #include <linux/spinlock.h>
 
 struct gpio_button_data {
-	const struct gpio_keys_button *button;
+	struct gpio_keys_button *button;
 	struct input_dev *input;
 	struct timer_list timer;
 	struct work_struct work;
@@ -44,6 +44,7 @@ struct gpio_button_data {
 
 struct gpio_keys_drvdata {
 	struct input_dev *input;
+	struct device *sec_key;	
 	struct mutex disable_lock;
 	unsigned int n_buttons;
 	int (*enable)(struct device *dev);
@@ -305,6 +306,12 @@ ATTR_STORE_FN(disabled_switches, EV_SW);
  * /sys/devices/platform/gpio-keys/disabled_keys [rw]
  * /sys/devices/platform/gpio-keys/disables_switches [rw]
  */
+
+ /* sys fs  */
+
+extern struct class *sec_class;
+
+
 static DEVICE_ATTR(disabled_keys, S_IWUSR | S_IRUGO,
 		   gpio_keys_show_disabled_keys,
 		   gpio_keys_store_disabled_keys);
@@ -324,6 +331,95 @@ static struct attribute_group gpio_keys_attr_group = {
 	.attrs = gpio_keys_attrs,
 };
 
+extern int d2153_onkey_check(void);
+
+static int keyreadstatus=0;
+
+static ssize_t key_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    uint8_t keys_pressed;
+    uint32_t onkey_pressed = 0;
+
+    onkey_pressed = d2153_onkey_check();
+
+	printk("[GPIO_KEY] %s, keyreadstatus%d\n", __func__, keyreadstatus);
+
+	if(keyreadstatus || onkey_pressed)
+    {
+        /* key press */
+        keys_pressed = 1;
+        
+    } 
+    else 
+    {
+        /* key release */
+        keys_pressed = 0;                        
+    }
+
+     return sprintf(buf, "%d\n", keys_pressed );
+}
+/* sys fs */
+
+
+/* the volume keys can be the wakeup keys in special case */
+static ssize_t wakeup_enable(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+ 	struct gpio_keys_drvdata *ddata = dev_get_drvdata(dev);
+ 	int n_events = get_n_events_by_type(EV_KEY);
+ 	unsigned long *bits;
+ 	ssize_t error;
+ 	int i;
+
+ 	bits = kcalloc(BITS_TO_LONGS(n_events),	sizeof(*bits), GFP_KERNEL);
+ 	if (!bits)
+		return -ENOMEM;
+
+
+	error = bitmap_parselist(buf, bits, n_events);
+	if (error)
+		goto out;
+
+	printk("n_buttons=%d, %s\n",ddata->n_buttons,__func__);
+
+
+ 	for (i = 0; i < ddata->n_buttons; i++) {
+		struct gpio_button_data *button = &ddata->data[i];
+		
+		printk("button->code=%d\n",button->button->code);
+		
+		if (test_bit(button->button->code, bits))
+		{
+			printk("code=%d, wakeup=1\n",button->button->code);
+		//	button->button->wakeup = 1;
+		}
+		else
+		{
+			printk("code=%d, wakeup=0\n",button->button->code);		
+		//	button->button->wakeup = 0;
+		}
+	}
+
+out:
+ 	kfree(bits);
+ 	return count;
+}
+
+static DEVICE_ATTR(sec_key_pressed, S_IRUGO, key_show, NULL);
+static DEVICE_ATTR(wakeup_keys, 0664, NULL, wakeup_enable);
+
+
+static struct attribute *sec_key_attrs[] = {
+	&dev_attr_sec_key_pressed.attr,
+	&dev_attr_wakeup_keys.attr,
+	NULL,
+};
+
+static struct attribute_group sec_key_attr_group = {
+	.attrs = sec_key_attrs,
+};
+
+
 static void gpio_keys_gpio_report_event(struct gpio_button_data *bdata)
 {
 	const struct gpio_keys_button *button = bdata->button;
@@ -336,6 +432,9 @@ static void gpio_keys_gpio_report_event(struct gpio_button_data *bdata)
 			input_event(input, type, button->code, button->value);
 	} else {
 		input_event(input, type, button->code, !!state);
+
+		keyreadstatus = !!state;
+		printk("[GPIO_KEY] %s  code=%d, key state=%d\n",__func__, button->code, keyreadstatus);
 	}
 	input_sync(input);
 }
@@ -448,6 +547,8 @@ static int __devinit gpio_keys_setup_key(struct platform_device *pdev,
 				button->gpio, error);
 			goto fail;
 		}
+
+		gpio_pull_up_port(button->gpio);
 
 		if (button->debounce_interval) {
 			error = gpio_set_debounce(button->gpio,
@@ -696,7 +797,7 @@ static int __devinit gpio_keys_probe(struct platform_device *pdev)
 		__set_bit(EV_REP, input->evbit);
 
 	for (i = 0; i < pdata->nbuttons; i++) {
-		const struct gpio_keys_button *button = &pdata->buttons[i];
+		struct gpio_keys_button *button = &pdata->buttons[i];
 		struct gpio_button_data *bdata = &ddata->data[i];
 
 		error = gpio_keys_setup_key(pdev, input, bdata, button);
@@ -731,10 +832,24 @@ static int __devinit gpio_keys_probe(struct platform_device *pdev)
 
 	device_init_wakeup(&pdev->dev, wakeup);
 
+/* /sec/sec_key/sec_key_pressed */
+     /* sys fs */
+	ddata->sec_key = device_create(sec_class, NULL, 0, ddata, "sec_key");
+	if (IS_ERR(	ddata->sec_key))
+		dev_err(dev, "Failed to create fac tsp temp dev\n");
+
+	error = sysfs_create_group(&ddata->sec_key->kobj, &sec_key_attr_group);
+	if (error) {
+		dev_err(dev, "Failed to create the test sysfs: %d\n",
+			error);
+		goto fail2;			
+	}
+
 	return 0;
 
  fail3:
 	sysfs_remove_group(&pdev->dev.kobj, &gpio_keys_attr_group);
+	sysfs_remove_group(&ddata->sec_key->kobj, &sec_key_attr_group);	
  fail2:
 	while (--i >= 0)
 		gpio_remove_key(&ddata->data[i]);

@@ -1,0 +1,9 @@
+#
+# TPU_PWM subsystem configuration
+#
+
+config TPU_PWM
+	bool "pwm support"
+
+
+

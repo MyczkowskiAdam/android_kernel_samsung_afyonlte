@@ -123,7 +123,7 @@ struct gs_port {
 };
 
 /* increase N_PORTS if you need more */
-#define N_PORTS		4
+#define N_PORTS		8
 static struct portmaster {
 	struct mutex	lock;			/* protect open/close */
 	struct gs_port	*port;
@@ -132,15 +132,6 @@ static unsigned	n_ports;
 
 #define GS_CLOSE_TIMEOUT		15		/* seconds */
 
-
-
-#ifdef VERBOSE_DEBUG
-#define pr_vdebug(fmt, arg...) \
-	pr_debug(fmt, ##arg)
-#else
-#define pr_vdebug(fmt, arg...) \
-	({ if (0) pr_debug(fmt, ##arg); })
-#endif
 
 /*-------------------------------------------------------------------------*/
 
@@ -607,6 +598,13 @@ static void gs_write_complete(struct usb_ep *ep, struct usb_request *req)
 		pr_warning("%s: unexpected %s status %d\n",
 				__func__, ep->name, req->status);
 		/* FALL THROUGH */
+
+		if (-ECONNRESET == req->status) {
+			/* Do not want transmission to start.
+			 Temp Fix for UE crash*/
+			gs_buf_clear(&port->port_write_buf);
+			break;
+		}
 	case 0:
 		/* normal completion */
 		gs_start_tx(port);
@@ -942,9 +940,19 @@ static void gs_flush_chars(struct tty_struct *tty)
 
 static int gs_write_room(struct tty_struct *tty)
 {
-	struct gs_port	*port = tty->driver_data;
+	struct gs_port	*port;
 	unsigned long	flags;
 	int		room = 0;
+
+	if (tty == NULL)
+	return room;
+
+	port = tty->driver_data; 
+        
+        if (NULL == port || NULL == &port->port_lock
+		|| NULL == &port->port_lock.rlock)
+		return room;
+
 
 	spin_lock_irqsave(&port->port_lock, flags);
 	if (port->port_usb)
@@ -1025,7 +1033,7 @@ static const struct tty_operations gs_tty_ops = {
 
 static struct tty_driver *gs_tty_driver;
 
-static int __init
+static int
 gs_port_alloc(unsigned port_num, struct usb_cdc_line_coding *coding)
 {
 	struct gs_port	*port;
@@ -1071,7 +1079,7 @@ gs_port_alloc(unsigned port_num, struct usb_cdc_line_coding *coding)
  *
  * Returns negative errno or zero.
  */
-int __init gserial_setup(struct usb_gadget *g, unsigned count)
+int gserial_setup(struct usb_gadget *g, unsigned count)
 {
 	unsigned			i;
 	struct usb_cdc_line_coding	coding;

@@ -29,4 +29,17 @@ config HSEM_U8500
 
 	  If unsure, say N.
 
+config HWSEM_RMOBILE
+	tristate "Renesas SH-/R-Mobile Bus Semaphore functionality"
+	depends on ARCH_SHMOBILE
+	select HWSPINLOCK
+	help
+	  Say y here to support Renesas HPB bus semaphore functionality,
+	  which gives one of CPU masters (that is, AP-System CPU in the Linux
+	  system) an exclusive control of the modules connected to the Common
+	  HPB bus.
+
+	  This provides a synchronization mechanism for the various processor(s)
+	  on the SoC.
+
 endmenu

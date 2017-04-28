@@ -58,12 +58,23 @@ static inline void cache_wait(void __iomem *reg, unsigned long mask)
 #define cache_wait	cache_wait_way
 #endif
 
+#ifdef CONFIG_ARCH_SHMOBILE
+extern void __iomem *dummy_write_mem;
+#endif
+
 static inline void cache_sync(void)
 {
 	void __iomem *base = l2x0_base;
 
 	writel_relaxed(0, base + sync_reg_offset);
 	cache_wait(base + L2X0_CACHE_SYNC, 1);
+#ifdef CONFIG_ARCH_SHMOBILE
+	if (dummy_write_mem) {
+		writel_relaxed(
+		(unsigned long)0xA5A55A5A, dummy_write_mem);
+		rmb();
+	}
+#endif
 }
 
 static inline void l2x0_clean_line(unsigned long addr)
@@ -287,6 +298,19 @@ static void l2x0_disable(void)
 	raw_spin_unlock_irqrestore(&l2x0_lock, flags);
 }
 
+#ifdef CONFIG_ARM_SEC_HAL
+uint32_t sec_hal_pm_l2_enable(uint32_t spinlock_phys_addr);
+#endif /* CONFIG_ARM_SEC_HAL */
+
+void __init l2x0_init_later(void)
+{
+#ifdef CONFIG_ARM_SEC_HAL
+    /* share spinlock between public-secure worlds. */
+	sec_hal_pm_l2_enable(virt_to_phys(&l2x0_lock));
+#endif /* CONFIG_ARM_SEC_HAL */
+}
+
+
 static void l2x0_unlock(u32 cache_id)
 {
 	int lockregs;
@@ -306,10 +330,34 @@ static void l2x0_unlock(u32 cache_id)
 	}
 }
 
+static void l2x0_bust_locks(void)
+{
+	if (!raw_spin_is_locked(&l2x0_lock))
+		return;
+
+	/*
+	 * The lock protects against attempts to write to control registers
+	 * while background operations are in progress (they will abort). So
+	 * poll for all possible background operations to complete before we
+	 * proceed to bust the lock.
+	 */
+	cache_wait_way(l2x0_base + L2X0_INV_WAY, l2x0_way_mask);
+	cache_wait_way(l2x0_base + L2X0_CLEAN_WAY, l2x0_way_mask);
+	cache_wait_way(l2x0_base + L2X0_CLEAN_INV_WAY, l2x0_way_mask);
+
+	l2x0_lock = __RAW_SPIN_LOCK_UNLOCKED(lock);
+}
+
+static void pl310_save(void);
+static void l2x0_resume(void);
+static void pl310_resume(void);
+
 void __init l2x0_init(void __iomem *base, u32 aux_val, u32 aux_mask)
 {
 	u32 aux;
 	u32 cache_id;
+	u32 prefetch;
+	u32 power;
 	u32 way_size = 0;
 	int ways;
 	const char *type;
@@ -318,6 +366,8 @@ void __init l2x0_init(void __iomem *base, u32 aux_val, u32 aux_mask)
 
 	cache_id = readl_relaxed(l2x0_base + L2X0_CACHE_ID);
 	aux = readl_relaxed(l2x0_base + L2X0_AUX_CTRL);
+	prefetch = readl_relaxed(l2x0_base + L2X0_PREFETCH_CTRL);
+	power = readl_relaxed(l2x0_base + L2X0_POWER_CTRL);
 
 	aux &= aux_mask;
 	aux |= aux_val;
@@ -356,6 +406,47 @@ void __init l2x0_init(void __iomem *base, u32 aux_val, u32 aux_mask)
 	way_size = 1 << (way_size + 3);
 	l2x0_size = ways * way_size * SZ_1K;
 
+	/* Performance improvements, power saving settings, etc. */
+	switch (cache_id & L2X0_CACHE_ID_PART_MASK) {
+	case L2X0_CACHE_ID_PART_L310:
+		/*
+		 * Enable internal instruction and data prefetching engine
+		 * if configured.
+		 */
+#ifdef CONFIG_CACHE_PL310_INSN_PREFETCH
+		aux |= 1 << L2X0_AUX_CTRL_INSTR_PREFETCH_SHIFT;
+		prefetch |= 1 << L2X0_PREFETCH_CTRL_INSTR_PREFETCH_SHIFT;
+#endif
+#ifdef CONFIG_CACHE_PL310_DATA_PREFETCH
+		aux |= 1 << L2X0_AUX_CTRL_DATA_PREFETCH_SHIFT;
+		prefetch |= 1 << L2X0_PREFETCH_CTRL_DATA_PREFETCH_SHIFT;
+#endif
+		/*
+		 * Enable prefetch-related features that can improve system
+		 * performance.  All bits in the prefetch control register
+		 * are set to zero by default, and we assume here that no
+		 * preceding softwares such as bootloaders set up these bits.
+		 */
+#ifdef CONFIG_CACHE_PL310_PREFETCH_DOUBLE_LINEFILL
+		/* safely available in r3p2 or later */
+		if ((cache_id & L2X0_CACHE_ID_RTL_MASK) >= L2X0_CACHE_ID_RTL_R3P1_50REL0)
+			prefetch |= 1 << L2X0_PREFETCH_CTRL_DOUBLE_LINEFILL_SHIFT;
+			/* bit 27 and 23 are left unused for now */
+#endif
+#ifdef CONFIG_CACHE_PL310_PREFETCH_DROP
+		/* safely available in r3p1 or later */
+		if ((cache_id & L2X0_CACHE_ID_RTL_MASK) >= L2X0_CACHE_ID_RTL_R3P1)
+			prefetch |= 1 << L2X0_PREFETCH_CTRL_PREFETCH_DROP_SHIFT;
+#endif
+#ifdef CONFIG_CACHE_PL310_DYNAMIC_CLOCK_GATING
+		power |= L2X0_DYNAMIC_CLK_GATING_EN;
+#endif
+#ifdef CONFIG_CACHE_PL310_STANDBY_MODE
+		power |= L2X0_STNDBY_MODE_EN;
+#endif
+		break;
+	}
+
 	/*
 	 * Check if l2x0 controller is already enabled.
 	 * If you are booting from non-secure mode
@@ -367,8 +458,12 @@ void __init l2x0_init(void __iomem *base, u32 aux_val, u32 aux_mask)
 
 		/* l2x0 controller is disabled */
 		writel_relaxed(aux, l2x0_base + L2X0_AUX_CTRL);
+		writel_relaxed(prefetch, l2x0_base + L2X0_PREFETCH_CTRL);
+		writel_relaxed(power, l2x0_base + L2X0_POWER_CTRL);
 
 		l2x0_saved_regs.aux_ctrl = aux;
+		l2x0_saved_regs.debug_ctrl =
+			readl_relaxed(l2x0_base + L2X0_DEBUG_CTRL);
 
 		l2x0_inv_all();
 
@@ -383,10 +478,26 @@ void __init l2x0_init(void __iomem *base, u32 aux_val, u32 aux_mask)
 	outer_cache.flush_all = l2x0_flush_all;
 	outer_cache.inv_all = l2x0_inv_all;
 	outer_cache.disable = l2x0_disable;
+	outer_cache.bust_locks = l2x0_bust_locks;
+
+#ifndef CONFIG_OF
+	if ((cache_id & L2X0_CACHE_ID_PART_MASK) == L2X0_CACHE_ID_PART_L310) {
+		pl310_save();
+		outer_cache.resume = pl310_resume;
+	} else {
+		outer_cache.resume = l2x0_resume;
+	}
+#endif
 
 	printk(KERN_INFO "%s cache controller enabled\n", type);
 	printk(KERN_INFO "l2x0: %d ways, CACHE_ID 0x%08x, AUX_CTRL 0x%08x, Cache size: %d B\n",
 			ways, cache_id, aux, l2x0_size);
+	printk(KERN_INFO "l2x0: PREFETCH_CTRL 0x%08x, POWER_CTRL 0x%08x\n",
+			prefetch, power);
+#ifdef CONFIG_ARCH_SHMOBILE
+	printk(KERN_INFO "l2x0: dummy_write_mem address = 0x%08x\n",
+			(unsigned int)dummy_write_mem);
+#endif
 }
 
 #ifdef CONFIG_OF
@@ -457,6 +568,7 @@ static void __init pl310_of_setup(const struct device_node *np,
 			       l2x0_base + L2X0_ADDR_FILTER_START);
 	}
 }
+#endif /* CONFIG_OF */
 
 static void __init pl310_save(void)
 {
@@ -490,9 +602,11 @@ static void __init pl310_save(void)
 static void l2x0_resume(void)
 {
 	if (!(readl_relaxed(l2x0_base + L2X0_CTRL) & 1)) {
-		/* restore aux ctrl and enable l2 */
+		/* restore debug ctrl, aux ctrl and enable l2 */
 		l2x0_unlock(readl_relaxed(l2x0_base + L2X0_CACHE_ID));
 
+		writel_relaxed(l2x0_saved_regs.debug_ctrl, l2x0_base +
+			L2X0_DEBUG_CTRL);
 		writel_relaxed(l2x0_saved_regs.aux_ctrl, l2x0_base +
 			L2X0_AUX_CTRL);
 
@@ -532,6 +646,7 @@ static void pl310_resume(void)
 	l2x0_resume();
 }
 
+#ifdef CONFIG_OF
 static const struct l2x0_of_data pl310_data = {
 	pl310_of_setup,
 	pl310_save,

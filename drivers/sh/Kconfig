@@ -3,3 +3,21 @@ menu "SuperH / SH-Mobile Driver Options"
 source "drivers/sh/intc/Kconfig"
 
 endmenu
+
+config RENESAS_DUMMY_NETDEV
+	bool "Renesas dummy net device"
+	depends on ARCH_SHMOBILE
+	default n
+	help
+	  This enables support for dummy network device support for renesas.
+	  If in doubt, say N.
+
+config RENESAS_MDMLOADER
+	bool "Renesas MODEM driver loader"
+	depends on ARCH_SHMOBILE
+	default n
+	help
+	  This enables support for modem software loader support for renesas boards.
+	  If in doubt, say N.
+
+

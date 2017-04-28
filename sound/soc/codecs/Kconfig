@@ -47,6 +47,7 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_SGTL5000 if I2C
 	select SND_SOC_SN95031 if INTEL_SCU_IPC
 	select SND_SOC_SPDIF
+	select SND_SOC_SH_FSI_WIRELESS_TRANSCEIVER
 	select SND_SOC_SSM2602 if SND_SOC_I2C_AND_SPI
 	select SND_SOC_STA32X if I2C
 	select SND_SOC_STAC9766 if SND_SOC_AC97_BUS
@@ -62,6 +63,7 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_UDA1380 if I2C
 	select SND_SOC_WL1273 if MFD_WL1273_CORE
 	select SND_SOC_WM1250_EV1 if I2C
+	select SND_SOC_D2153 if I2C
 	select SND_SOC_WM2000 if I2C
 	select SND_SOC_WM2200 if I2C
 	select SND_SOC_WM5100 if I2C
@@ -217,6 +219,23 @@ config SND_SOC_DFBMCS320
 config SND_SOC_DMIC
 	tristate
 
+config SND_SOC_D2153
+	tristate "D2153 codec support"
+
+config SND_SOC_D2153_AAD
+	tristate "D2153 AAD support"
+
+choice
+	prompt "MicBias1 level Configuration"
+	depends on SND_SOC_D2153_AAD
+config SND_SOC_D2153_AAD_MICBIAS1_2_1V
+	bool "using Microphone bias1 level 2.1V"
+config SND_SOC_D2153_AAD_MICBIAS1_2_5V
+	bool "using Microphone bias1 level 2.5V"
+config SND_SOC_D2153_AAD_MICBIAS1_2_6V
+	bool "using Microphone bias1 level 2.6V"
+endchoice
+
 config SND_SOC_MAX98088
        tristate
 
@@ -239,6 +258,14 @@ config SND_SOC_SGTL5000
 config SND_SOC_SIGMADSP
 	tristate
 	select CRC32
+
+config SND_SOC_SH_FSI_WIRELESS_TRANSCEIVER
+	tristate "sh-fsi Bluetooth and Fm dummy codec driver support"
+	help
+	 For sh-fsi Platform
+	  Bluetooth and Fm dummy codec driver.
+		This driver registers snd_soc_dai_driver.
+		 And it is dummy.
 
 config SND_SOC_SN95031
 	tristate

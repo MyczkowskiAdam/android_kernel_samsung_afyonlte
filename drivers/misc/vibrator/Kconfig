@@ -1,0 +1,3 @@
+
+config VIBRATOR
+	bool "enable Vibrator"

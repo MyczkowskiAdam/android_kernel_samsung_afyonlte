@@ -47,6 +47,9 @@ int smp_call_function_single(int cpuid, smp_call_func_t func, void *info,
  */
 extern void smp_send_stop(void);
 
+
+extern void smp_send_stop_only(void);
+
 /*
  * sends a 'reschedule' event to another CPU:
  */
@@ -131,6 +134,7 @@ extern void __init smp_init(void);
 
 static inline void smp_send_stop(void) { }
 
+static inline void smp_send_stop_only(void) { }
 /*
  *	These macros fold the SMP functionality into a single CPU system
  */

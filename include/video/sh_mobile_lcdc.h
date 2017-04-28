@@ -2,7 +2,6 @@
 #define __ASM_SH_MOBILE_LCDC_H__
 
 #include <linux/fb.h>
-#include <video/sh_mobile_meram.h>
 
 /* Register definitions */
 #define _LDDCKR			0x410
@@ -123,9 +122,21 @@ enum {
 	SYS24	= LDMT1R_IFM | LDMT1R_MIFTYP_SYS24,	/* 24bpp */
 };
 
-enum { LCDC_CHAN_DISABLED = 0,
-       LCDC_CHAN_MAINLCD,
-       LCDC_CHAN_SUBLCD };
+/* Header Section */
+struct lcdrt_sectioninfo {
+	u32 variableareaaddr;	/* Address of Variable Area */
+	u32 variableareasize;	/* Size of Variable Area */
+	u32 fixedareaaddr;	/* Address of Fixed Area */
+	u32 fixedareasize;	/* Size of Fixed Area */
+	u32 commandareaaddr;	/* Address of Command Transfer Area */
+	u32 commandareasize;	/* Size of Command Transfer Area */
+	u32 onscrnaddr;		/* Address of OnScreen Buffer */
+	u32 onscrnsize;		/* Size of OnScreen Buffer */
+};
+
+enum {	LCDC_CHAN_DISABLED = 0,
+	LCDC_CHAN_MAINLCD,
+	LCDC_CHAN_SUBLCD };
 
 enum { LCDC_CLK_BUS, LCDC_CLK_PERIPHERAL, LCDC_CLK_EXTERNAL };
 
@@ -135,11 +146,44 @@ enum { LCDC_CLK_BUS, LCDC_CLK_PERIPHERAL, LCDC_CLK_EXTERNAL };
 #define LCDC_FLAGS_HSCNT (1 << 3) /* Disable HSYNC during VBLANK */
 #define LCDC_FLAGS_DWCNT (1 << 4) /* Disable dotclock during blanking */
 
-struct sh_mobile_lcdc_sys_bus_cfg {
-	unsigned long ldmt2r;
-	unsigned long ldmt3r;
-	unsigned long deferred_io_msec;
+/*Main display*/
+#define SH_MLCD_WIDTH		480
+#define SH_MLCD_HEIGHT		800
+
+#define SH_MLCD_TRCOLOR		0
+#define SH_MLCD_REPLACECOLOR	0
+#define SH_MLCD_RECTX		0
+#define SH_MLCD_RECTY		0
+
+/*Sub display*/
+#define SH_SLCD_WIDTH		480
+#define SH_SLCD_HEIGHT		864
+
+#define SH_SLCD_TRCOLOR		0
+#define SH_SLCD_REPLACECOLOR	0
+#define SH_SLCD_RECTX		0
+#define SH_SLCD_RECTY		0
+
+#define SH_FB_HDMI_START	1
+#define SH_FB_HDMI_STOP		2
+
+#define SH_FB_VSYNC_OFF         0
+#define SH_FB_VSYNC_ON          1
+
+enum {
+	SH_FB_HDMI_480P60,
+	SH_FB_HDMI_720P60,
+	SH_FB_HDMI_1080I60,
+	SH_FB_HDMI_1080P24,
+	SH_FB_HDMI_576P50,
+	SH_FB_HDMI_720P50,
+	SH_FB_HDMI_1080P60,
+	SH_FB_HDMI_1080P50,
+	SH_FB_HDMI_480P60A43,
+	SH_FB_HDMI_576P50A43,
 };
+
+#define FBIO_WAITFORVSYNC _IOW('F', 0x20, __u32)
 
 struct sh_mobile_lcdc_sys_bus_ops {
 	void (*write_index)(void *handle, unsigned long data);
@@ -158,27 +202,18 @@ struct sh_mobile_lcdc_panel_cfg {
 	void (*display_off)(void);
 };
 
-/* backlight info */
-struct sh_mobile_lcdc_bl_info {
-	const char *name;
-	int max_brightness;
-	int (*set_brightness)(int brightness);
-	int (*get_brightness)(void);
-};
-
 struct sh_mobile_lcdc_chan_cfg {
 	int chan;
 	int fourcc;
-	int colorspace;
+	int bpp;
 	int interface_type; /* selects RGBn or SYSn I/F, see above */
 	int clock_divider;
 	unsigned long flags; /* LCDC_FLAGS_... */
-	const struct fb_videomode *lcd_modes;
+	struct fb_videomode *lcd_modes;
 	int num_modes;
 	struct sh_mobile_lcdc_panel_cfg panel_cfg;
-	struct sh_mobile_lcdc_bl_info bl_info;
-	struct sh_mobile_lcdc_sys_bus_cfg sys_bus_cfg; /* only for SYSn I/F */
-	const struct sh_mobile_meram_cfg *meram_cfg;
+	unsigned long panelreset_gpio;
+	unsigned long paneldsi_irq;
 
 	struct platform_device *tx_dev;	/* HDMI/DSI transmitter device */
 };
@@ -186,7 +221,70 @@ struct sh_mobile_lcdc_chan_cfg {
 struct sh_mobile_lcdc_info {
 	int clock_source;
 	struct sh_mobile_lcdc_chan_cfg ch[2];
-	struct sh_mobile_meram_info *meram_dev;
 };
+
+struct fb_hdmi_set_mode {
+	unsigned int start;
+	unsigned int format;
+};
+
+struct fb_panel_hw_info {
+	unsigned int gpio_reg;
+	unsigned int dsi_irq;
+};
+
+struct fb_panel_func {
+	int (*panel_init)(unsigned int mem_size);
+	int (*panel_suspend)(void);
+	int (*panel_resume)(void);
+	int (*panel_probe)(struct fb_info *info,
+			struct fb_panel_hw_info hw_info);
+	int (*panel_remove)(struct fb_info *info);
+	struct fb_panel_info (*panel_info)(void);
+};
+
+struct fb_panel_info {
+	unsigned int pixel_width;
+	unsigned int pixel_height;
+	unsigned int size_width;
+	unsigned int size_height;
+	unsigned int buff_address;
+	unsigned int pixclock;
+	unsigned int left_margin;
+	unsigned int right_margin;
+	unsigned int upper_margin;
+	unsigned int lower_margin;
+	unsigned int hsync_len;
+	unsigned int vsync_len;
+};
+
+struct fb_hdmi_func {
+	int (*hdmi_set)(unsigned int format);
+	int (*hdmi_suspend)(void);
+	int (*hdmi_resume)(void);
+};
+
+
+#define IOC_SH_MOBILE_FB_MAGIC 'S'
+
+#define SH_MOBILE_FB_HDMI_SET \
+	_IOW(IOC_SH_MOBILE_FB_MAGIC, 0x00, struct fb_hdmi_set_mode)
+
+#define SH_MOBILE_FB_ENABLEVSYNC \
+	_IOW(IOC_SH_MOBILE_FB_MAGIC, 0x01, __u32)
+
+extern int sh_mobile_lcdc_keyclr_set(unsigned short s_key_clr,
+				unsigned short output_mode);
+extern int sh_mobile_lcdc_alpha_set(unsigned short s_alpha,
+				unsigned short output_mode);
+extern int sh_mobile_lcdc_refresh(unsigned short set_state,
+				unsigned short output_mode);
+
+extern struct fb_panel_func r_mobile_panel_func(int panel);
+extern struct fb_hdmi_func r_mobile_hdmi_func(void);
+
+extern void r_mobile_fb_err_msg(int value, char *func_name);
+
+/*extern struct semaphore   sh_mobile_sem_hdmi;*/
 
 #endif /* __ASM_SH_MOBILE_LCDC_H__ */

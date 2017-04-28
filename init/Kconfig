@@ -746,7 +746,6 @@ config RT_GROUP_SCHED
 	bool "Group scheduling for SCHED_RR/FIFO"
 	depends on EXPERIMENTAL
 	depends on CGROUP_SCHED
-	default n
 	help
 	  This feature lets you explicitly allocate real CPU bandwidth
 	  to task groups. If enabled, it will also make it impossible to
@@ -952,6 +951,12 @@ config SYSCTL
 
 config ANON_INODES
 	bool
+
+config PANIC_TIMEOUT
+	int "Default panic timeout"
+	default 0
+	help
+	  Set default panic timeout.
 
 menuconfig EXPERT
 	bool "Configure standard kernel features (expert users)"

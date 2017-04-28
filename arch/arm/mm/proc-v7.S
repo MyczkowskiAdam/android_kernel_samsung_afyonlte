@@ -89,6 +89,37 @@ ENDPROC(cpu_v7_dcache_clean_area)
 	string	cpu_v7_name, "ARMv7 Processor"
 	.align
 
+	/*
+	 * Memory region attributes with SCTLR.TRE=1
+	 *
+	 *   n = TEX[0],C,B
+	 *   TR = PRRR[2n+1:2n]		- memory type
+	 *   IR = NMRR[2n+1:2n]		- inner cacheable property
+	 *   OR = NMRR[2n+17:2n+16]	- outer cacheable property
+	 *
+	 *			n	TR	IR	OR
+	 *   UNCACHED		000	00
+	 *   BUFFERABLE		001	10	00	00
+	 *   WRITETHROUGH	010	10	10	10
+	 *   WRITEBACK		011	10	11	11
+	 *   reserved		110
+	 *   WRITEALLOC		111	10	01	01
+	 *   DEV_SHARED		100	01
+	 *   DEV_NONSHARED	100	01
+	 *   DEV_WC		001	10
+	 *   DEV_CACHED		011	10
+	 *
+	 * Other attributes:
+	 *
+	 *   DS0 = PRRR[16] = 0		- device shareable property
+	 *   DS1 = PRRR[17] = 1		- device shareable property
+	 *   NS0 = PRRR[18] = 0		- normal shareable property
+	 *   NS1 = PRRR[19] = 1		- normal shareable property
+	 *   NOS = PRRR[24+n] = 1	- not outer shareable
+	 */
+.equ	PRRR,	0xff0a81a8
+.equ	NMRR,	0xc0e040e0
+
 /* Suspend/resume support: derived from arch/arm/mach-s5pv210/sleep.S */
 .globl	cpu_v7_suspend_size
 .equ	cpu_v7_suspend_size, 4 * 8
@@ -172,7 +203,7 @@ __v7_ca15mp_setup:
 __v7_setup:
 	adr	r12, __v7_setup_stack		@ the local stack
 	stmia	r12, {r0-r5, r7, r9, r11, lr}
-	bl	v7_flush_dcache_all
+	bl	v7_inv_dcache_all
 	ldmia	r12, {r0-r5, r7, r9, r11, lr}
 
 	mrc	p15, 0, r0, c0, c0, 0		@ read main ID register
@@ -214,6 +245,18 @@ __v7_setup:
 2:	ldr	r10, =0x00000c09		@ Cortex-A9 primary part number
 	teq	r0, r10
 	bne	3f
+#ifdef CONFIG_CPU_DYNAMIC_CLOCK_GATING
+	cmp	r6, #0x10			@ power ctrl reg added r1p0
+	mrcge	p15, 0, r10, c15, c0, 0		@ read power control register
+	orrge	r10, r10, #1			@ enable dynamic clock gating
+	mcrge	p15, 0, r10, c15, c0, 0		@ write power control register
+#endif
+#ifdef CONFIG_ARM_ERRATA_720791
+	teq	r5, #0x00100000			@ only present in r1p*
+	mrceq	p15, 0, r10, c15, c0, 2		@ read "chicken power ctrl" reg
+	orreq	r10, r10, #0x30			@ disable core clk gate on
+	mcreq	p15, 0, r10, c15, c0, 2		@ instr-side waits
+#endif
 #ifdef CONFIG_ARM_ERRATA_742230
 	cmp	r6, #0x22			@ only present up to r2p2
 	mrcle	p15, 0, r10, c15, c0, 1		@ read diagnostic register
@@ -242,6 +285,55 @@ __v7_setup:
 	orrlt	r10, r10, #1 << 11		@ set bit #11
 	mcrlt	p15, 0, r10, c15, c0, 1		@ write diagnostic register
 1:
+#endif
+
+#ifdef CONFIG_CPU_DCACHE_PREFETCH
+	/*
+	 * TODO: This should be disabled for all r0, r1 and r2 revisions
+	 * due to the 751473 Cortex-A9 erratum.
+	 */
+	mrc	p15, 0, r10, c1, c0, 1		@ read aux control register
+	orr	r10, r10, #1 << 2		@ set L1 prefetch enable bit
+	mcr	p15, 0, r10, c1, c0, 1		@ write aux control register
+
+#ifdef CONFIG_SMP
+	/*
+	 * When Cortex-A9 MPCore is configured to run in SMP mode,
+	 * the automatic data prefetchers issue special read accesses
+	 * to the L2CC(L2C-310), called Prefetch Hints.
+	 *
+	 * This feature should be enabled only when all the conditions
+	 * are satisfied.
+	 */
+	mrc	p15, 0, r10, c1, c0, 1		@ read aux control register
+	orr	r10, r10, #1 << 1		@ set L2 prefetch hint enable bit
+	mcr	p15, 0, r10, c1, c0, 1		@ write aux control register
+#endif
+#endif
+#ifndef CONFIG_ARM_TZ
+#ifdef CONFIG_CPU_DCACHE_PREFETCH
+	/*
+	 * TODO: This should be disabled for all r0, r1 and r2 revisions
+	 * due to the 751473 Cortex-A9 erratum.
+	 */
+	mrc	p15, 0, r10, c1, c0, 1		@ read aux control register
+	orr	r10, r10, #1 << 2		@ set L1 prefetch enable bit
+	mcr	p15, 0, r10, c1, c0, 1		@ write aux control register
+
+#ifdef CONFIG_SMP
+	/*
+	 * When Cortex-A9 MPCore is configured to run in SMP mode,
+	 * the automatic data prefetchers issue special read accesses
+	 * to the L2CC(L2C-310), called Prefetch Hints.
+	 *
+	 * This feature should be enabled only when all the conditions
+	 * are satisfied.
+	 */
+	mrc	p15, 0, r10, c1, c0, 1		@ read aux control register
+	orr	r10, r10, #1 << 1		@ set L2 prefetch hint enable bit
+	mcr	p15, 0, r10, c1, c0, 1		@ write aux control register
+#endif
+#endif
 #endif
 
 3:	mov	r10, #0

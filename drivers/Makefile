@@ -22,7 +22,7 @@ obj-$(CONFIG_ARM_AMBA)		+= amba/
 # Many drivers will want to use DMA so this has to be made available
 # really early.
 obj-$(CONFIG_DMA_ENGINE)	+= dma/
-
+obj-$(CONFIG_SAMSUNG_PARAM)	+= param/
 obj-$(CONFIG_VIRTIO)		+= virtio/
 obj-$(CONFIG_XEN)		+= xen/
 
@@ -100,6 +100,7 @@ obj-$(CONFIG_CPU_IDLE)		+= cpuidle/
 obj-y				+= mmc/
 obj-$(CONFIG_MEMSTICK)		+= memstick/
 obj-y				+= leds/
+obj-$(CONFIG_SWITCH)		+= switch/
 obj-$(CONFIG_INFINIBAND)	+= infiniband/
 obj-$(CONFIG_SGI_SN)		+= sn/
 obj-y				+= firmware/
@@ -134,3 +135,25 @@ obj-$(CONFIG_VIRT_DRIVERS)	+= virt/
 obj-$(CONFIG_HYPERV)		+= hv/
 
 obj-$(CONFIG_PM_DEVFREQ)	+= devfreq/
+
+obj-$(CONFIG_NEW_SENSORS)	+= sensors/
+obj-y				+= pmic/
+
+obj-$(CONFIG_SMECO)		+= smeco/
+
+obj-$(CONFIG_THERMAL_SENSOR)	+= thermal/thermal_sensor/
+obj-y				+= motor/
+
+obj-$(CONFIG_SAMSUNG_MHL)	+= accessory/
+obj-$(CONFIG_PM_DEBUG)		+= pmdbg/
+obj-$(CONFIG_ARM_SEC_HAL)	+= sec_hal/
+obj-y				+= zb3ctrl/
+
+obj-$(CONFIG_MEMLOG)	+= memlog/
+obj-$(CONFIG_AUTHENTEC_VPNCLIENT_INTERCEPTOR) += interceptor/
+
+#exFAT
+ifeq (1, $(shell if [ -d $(srctree)/drivers/exfat ] ; then echo 1 ; fi))
+obj-y                           += exfat/
+endif
+

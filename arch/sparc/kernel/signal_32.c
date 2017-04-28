@@ -29,6 +29,8 @@
 
 #include "sigutil.h"
 
+#include "sigutil.h"
+
 #define _BLOCKABLE (~(sigmask(SIGKILL) | sigmask(SIGSTOP)))
 
 extern void fpsave(unsigned long *fpregs, unsigned long *fsr,

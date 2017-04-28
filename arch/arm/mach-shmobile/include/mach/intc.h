@@ -14,25 +14,25 @@
 	p ## _IRQ24, p ## _IRQ25, p ## _IRQ26, p ## _IRQ27,	\
 	p ## _IRQ28, p ## _IRQ29, p ## _IRQ30, p ## _IRQ31
 
-#define INTC_IRQ_PINS_VECT_16L(p, vect)				\
-	vect(p ## _IRQ0, 0x0200), vect(p ## _IRQ1, 0x0220),	\
-	vect(p ## _IRQ2, 0x0240), vect(p ## _IRQ3, 0x0260),	\
-	vect(p ## _IRQ4, 0x0280), vect(p ## _IRQ5, 0x02a0),	\
-	vect(p ## _IRQ6, 0x02c0), vect(p ## _IRQ7, 0x02e0),	\
-	vect(p ## _IRQ8, 0x0300), vect(p ## _IRQ9, 0x0320),	\
-	vect(p ## _IRQ10, 0x0340), vect(p ## _IRQ11, 0x0360),	\
-	vect(p ## _IRQ12, 0x0380), vect(p ## _IRQ13, 0x03a0),	\
-	vect(p ## _IRQ14, 0x03c0), vect(p ## _IRQ15, 0x03e0)
+#define INTC_IRQ_PINS_VECT_16L(p, vect, base)				\
+	vect(p ## _IRQ0, base + 0x000), vect(p ## _IRQ1, base + 0x020),	\
+	vect(p ## _IRQ2, base + 0x040), vect(p ## _IRQ3, base + 0x060),	\
+	vect(p ## _IRQ4, base + 0x080), vect(p ## _IRQ5, base + 0x0a0),	\
+	vect(p ## _IRQ6, base + 0x0c0), vect(p ## _IRQ7, base + 0x0e0),	\
+	vect(p ## _IRQ8, base + 0x100), vect(p ## _IRQ9, base + 0x120),	\
+	vect(p ## _IRQ10, base + 0x140), vect(p ## _IRQ11, base + 0x160), \
+	vect(p ## _IRQ12, base + 0x180), vect(p ## _IRQ13, base + 0x1a0), \
+	vect(p ## _IRQ14, base + 0x1c0), vect(p ## _IRQ15, base + 0x1e0)
 
-#define INTC_IRQ_PINS_VECT_16H(p, vect)				\
-	vect(p ## _IRQ16, 0x3200), vect(p ## _IRQ17, 0x3220),	\
-	vect(p ## _IRQ18, 0x3240), vect(p ## _IRQ19, 0x3260),	\
-	vect(p ## _IRQ20, 0x3280), vect(p ## _IRQ21, 0x32a0),	\
-	vect(p ## _IRQ22, 0x32c0), vect(p ## _IRQ23, 0x32e0),	\
-	vect(p ## _IRQ24, 0x3300), vect(p ## _IRQ25, 0x3320),	\
-	vect(p ## _IRQ26, 0x3340), vect(p ## _IRQ27, 0x3360),	\
-	vect(p ## _IRQ28, 0x3380), vect(p ## _IRQ29, 0x33a0),	\
-	vect(p ## _IRQ30, 0x33c0), vect(p ## _IRQ31, 0x33e0)
+#define INTC_IRQ_PINS_VECT_16H(p, vect, base)				\
+	vect(p ## _IRQ16, base + 0x000), vect(p ## _IRQ17, base + 0x020), \
+	vect(p ## _IRQ18, base + 0x040), vect(p ## _IRQ19, base + 0x060), \
+	vect(p ## _IRQ20, base + 0x080), vect(p ## _IRQ21, base + 0x0a0), \
+	vect(p ## _IRQ22, base + 0x0c0), vect(p ## _IRQ23, base + 0x0e0), \
+	vect(p ## _IRQ24, base + 0x100), vect(p ## _IRQ25, base + 0x120), \
+	vect(p ## _IRQ26, base + 0x140), vect(p ## _IRQ27, base + 0x160), \
+	vect(p ## _IRQ28, base + 0x180), vect(p ## _IRQ29, base + 0x1a0), \
+	vect(p ## _IRQ30, base + 0x1c0), vect(p ## _IRQ31, base + 0x1e0)
 
 #define INTC_IRQ_PINS_MASK_16L(p, base)					\
 	{ base + 0x40, base + 0x60, 8, /* INTMSK00A / INTMSKCLR00A */	\
@@ -98,7 +98,7 @@
 	  { p ## _IRQ24, p ## _IRQ25, p ## _IRQ26, p ## _IRQ27,		\
 	    p ## _IRQ28, p ## _IRQ29, p ## _IRQ30, p ## _IRQ31 } }
 
-#define INTC_IRQ_PINS_16(p, base, vect, str)				\
+#define INTC_IRQ_PINS_16(p, base, base16l, vect, str)			\
 									\
 static struct resource p ## _resources[] __initdata = {			\
 	[0] = {								\
@@ -114,7 +114,7 @@ enum {									\
 };									\
 									\
 static struct intc_vect p ## _vectors[] __initdata = {			\
-	INTC_IRQ_PINS_VECT_16L(p, vect),				\
+	INTC_IRQ_PINS_VECT_16L(p, vect, base16l),			\
 };									\
 									\
 static struct intc_mask_reg p ## _mask_registers[] __initdata = {	\
@@ -142,7 +142,7 @@ static struct intc_desc p ## _desc __initdata = {			\
 			     p ## _sense_registers, p ## _ack_registers) \
 }
 
-#define INTC_IRQ_PINS_32(p, base, vect, str)				\
+#define INTC_IRQ_PINS_32(p, base, base16l, base16h, vect, str)		\
 									\
 static struct resource p ## _resources[] __initdata = {			\
 	[0] = {								\
@@ -159,8 +159,8 @@ enum {									\
 };									\
 									\
 static struct intc_vect p ## _vectors[] __initdata = {			\
-	INTC_IRQ_PINS_VECT_16L(p, vect),				\
-	INTC_IRQ_PINS_VECT_16H(p, vect),				\
+	INTC_IRQ_PINS_VECT_16L(p, vect, base16l),			\
+	INTC_IRQ_PINS_VECT_16H(p, vect, base16h),			\
 };									\
 									\
 static struct intc_mask_reg p ## _mask_registers[] __initdata = {	\

@@ -1022,6 +1022,13 @@ KEEP_CONFIG:
 		host->row_addr_cycles = 3;
 	else
 		host->row_addr_cycles = 2;
+	mtd->name = mtd_names[0];
+	chip->ecc.mode = NAND_ECC_HW;
+	chip->ecc.size = info->page_size;
+
+	chip->options = (info->reg_ndcr & NDCR_DWIDTH_M) ? NAND_BUSWIDTH_16 : 0;
+	chip->options |= NAND_NO_AUTOINCR;
+	chip->options |= NAND_NO_READRDY;
 
 	mtd->name = mtd_names[0];
 	return nand_scan_tail(mtd);

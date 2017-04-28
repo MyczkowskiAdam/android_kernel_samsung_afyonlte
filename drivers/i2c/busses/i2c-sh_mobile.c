@@ -33,6 +33,8 @@
 #include <linux/io.h>
 #include <linux/slab.h>
 #include <linux/i2c/i2c-sh_mobile.h>
+#include <mach/gpio.h>
+#include <mach/common.h>
 
 /* Transmit operation:                                                      */
 /*                                                                          */
@@ -119,22 +121,29 @@ struct sh_mobile_i2c_data {
 	void __iomem *reg;
 	struct i2c_adapter adap;
 	unsigned long bus_speed;
+	unsigned int clks_per_count;
 	struct clk *clk;
 	u_int8_t icic;
-	u_int8_t iccl;
-	u_int8_t icch;
 	u_int8_t flags;
+	u_int16_t iccl;
+	u_int16_t icch;
 
 	spinlock_t lock;
 	wait_queue_head_t wait;
+	struct i2c_msg *msgs;
 	struct i2c_msg *msg;
+	int msgs_num;
+	int curr_msg;
 	int pos;
 	int sr;
+	int8_t bus_data_delay;
 };
 
 #define IIC_FLAG_HAS_ICIC67	(1 << 0)
 
-#define NORMAL_SPEED		100000 /* FAST_SPEED 400000 */
+#define STANDARD_MODE		100000
+#define FAST_MODE		400000
+#define FAST_MODE_PLUS		1000000
 
 /* Register offsets */
 #define ICDR			0x00
@@ -143,6 +152,7 @@ struct sh_mobile_i2c_data {
 #define ICIC			0x0c
 #define ICCL			0x10
 #define ICCH			0x14
+#define ICTC			0x28
 
 /* Register bits */
 #define ICCR_ICE		0x80
@@ -167,17 +177,23 @@ struct sh_mobile_i2c_data {
 #define ICIC_WAITE		0x02
 #define ICIC_DTEE		0x01
 
+#define RLTE_SSG_REV_041	4
+#define MAX_SDA_DELAY		31
+#define MIN_SDA_DELAY		0
+#define UNMASK_ICTC_BITS_0TO2	0x07
+#define UNMASK_DATA_DELAY_3TO7	0xF8
+#define SHIFT_3BITS_SDA_DELAY	3
 static void iic_wr(struct sh_mobile_i2c_data *pd, int offs, unsigned char data)
 {
 	if (offs == ICIC)
 		data |= pd->icic;
 
-	iowrite8(data, pd->reg + offs);
+	writeb_relaxed(data, pd->reg + offs);
 }
 
 static unsigned char iic_rd(struct sh_mobile_i2c_data *pd, int offs)
 {
-	return ioread8(pd->reg + offs);
+	return readb_relaxed(pd->reg + offs);
 }
 
 static void iic_set_clr(struct sh_mobile_i2c_data *pd, int offs,
@@ -186,81 +202,152 @@ static void iic_set_clr(struct sh_mobile_i2c_data *pd, int offs,
 	iic_wr(pd, offs, (iic_rd(pd, offs) | set) & ~clr);
 }
 
+static void iic_sync(struct sh_mobile_i2c_data *pd)
+{
+	readb_relaxed(pd->reg + ICSR); /* defeat write posting */
+}
+
+static u32 sh_mobile_i2c_icch(unsigned long count, u32 tHIGH,
+				u32 tf, int offset)
+{
+	/*
+	 * Conditional expression:
+	 *   ICCH >= COUNT_CLK * (tHIGH + tf)
+	 *
+	 * SH/R-Mobile IIC hardware awares of SCL transition period 'tr',
+	 * and can ignore it.  SH/R-Mobile IIC controller starts counting
+	 * the HIGH peirod of the SCL signal (tHIGH) after the SCL input
+	 * voltage increases at VIH.
+	 *
+	 * Afterward it turns out calculating ICCH using only tHIGH spec
+	 * will result in violation of the tHD;STA timing spec.  We need
+	 * to take into account the fall time of SDA signal (tf) at START
+	 * condition, in order to meet both tHIGH and tHD;STA specs.
+	 */
+	return ((count * (tHIGH + tf)) + 50000) / 100000 + offset;
+}
+
+static u32 sh_mobile_i2c_iccl(unsigned long count, u32 tLOW, u32 tf, int offset)
+{
+	/*
+	 * Conditional expression:
+	 *   ICCL >= COUNT_CLK * (tLOW + tf)
+	 *
+	 * SH/R-Mobile IIC hardware starts counting the LOW period of
+	 * the SCL signal (tLOW) as soon as it pulls the SCL line.
+	 * In order to meet the tLOW timing spec, we need to take into
+	 * account the fall time of SCL signal (tf).  Default tf value
+	 * should be 0.3 us, for safety.
+	 */
+	return (((count * (tLOW + tf)) + 50000) / 100000) + offset;
+}
+
+static void sh_mobile_i2c_init(struct sh_mobile_i2c_data *pd)
+{
+	unsigned long i2c_clk_khz;
+	u32 tHIGH = 0;
+	u32 tLOW = 0;
+	u32 tf = 0;
+	int offset = 0;
+
+	/* Get clock rate after clock is enabled */
+	clk_enable(pd->clk);
+	i2c_clk_khz = clk_get_rate(pd->clk) / 1000;
+
+#if defined(CONFIG_ARCH_SH73A0) || defined(CONFIG_ARCH_R8A7373)
+	i2c_clk_khz /= 2;
+#endif
+
+	if (pd->bus_speed == STANDARD_MODE) {
+		tHIGH	= 400;	/* tHD;STA = tHIGH = 4.0 us */
+		tLOW	= 470;	/* tLOW = 4.7 us */
+		tf	= 30;	/* tf = 0.3 us */
+		offset	= 0;	/* No offset */
+	} else if(pd->bus_speed == FAST_MODE) {
+		tHIGH	= 60;	/* tHD;STA = tHIGH = 0.6 us */
+		tLOW	= 130;	/* tLOW = 1.3 us */
+		tf	= 30;	/* tf = 0.3 us */
+		offset	= 0;	/* No offset */
+	} else if (pd->bus_speed == FAST_MODE_PLUS) {
+		tHIGH	= 26;	/* tHD;STA = tHIGH = 0.26 us */
+		tLOW	= 50;	/* tLOW = 0.5 us */
+		tf	= 12;	/* tf = 0.12 us */
+		offset	= 0;	/* No offset */
+	} else
+		dev_err(pd->dev, "unrecognized bus speed %lu Hz\n",
+			pd->bus_speed);
+
+	pd->icch = sh_mobile_i2c_icch(i2c_clk_khz, tHIGH, tf, offset);
+	/* one more bit of ICCH in ICIC */
+	if ((pd->icch > 0xff) && (pd->flags & IIC_FLAG_HAS_ICIC67))
+		pd->icic |= ICIC_ICCHB8;
+	else
+		pd->icic &= ~ICIC_ICCHB8;
+
+	pd->iccl = sh_mobile_i2c_iccl(i2c_clk_khz, tLOW, tf, offset);
+	/* one more bit of ICCL in ICIC */
+	if ((pd->iccl > 0xff) && (pd->flags & IIC_FLAG_HAS_ICIC67))
+		pd->icic |= ICIC_ICCLB8;
+	else
+		pd->icic &= ~ICIC_ICCLB8;
+
+	clk_disable(pd->clk);
+}
+
 static void activate_ch(struct sh_mobile_i2c_data *pd)
 {
-	unsigned long i2c_clk;
-	u_int32_t num;
-	u_int32_t denom;
-	u_int32_t tmp;
+	struct i2c_sh_mobile_platform_data *pdata = pd->dev->platform_data;
+
+	if (pdata->pin_multi) {
+		gpio_free(pdata->scl_info.port_num);
+		gpio_free(pdata->sda_info.port_num);
+		gpio_request(pdata->scl_info.port_func, NULL);
+		gpio_request(pdata->sda_info.port_func, NULL);
+	}
 
 	/* Wake up device and enable clock */
 	pm_runtime_get_sync(pd->dev);
 	clk_enable(pd->clk);
 
-	/* Get clock rate after clock is enabled */
-	i2c_clk = clk_get_rate(pd->clk);
-
-	/* Calculate the value for iccl. From the data sheet:
-	 * iccl = (p clock / transfer rate) * (L / (L + H))
-	 * where L and H are the SCL low/high ratio (5/4 in this case).
-	 * We also round off the result.
-	 */
-	num = i2c_clk * 5;
-	denom = pd->bus_speed * 9;
-	tmp = num * 10 / denom;
-	if (tmp % 10 >= 5)
-		pd->iccl = (u_int8_t)((num/denom) + 1);
-	else
-		pd->iccl = (u_int8_t)(num/denom);
-
-	/* one more bit of ICCL in ICIC */
-	if (pd->flags & IIC_FLAG_HAS_ICIC67) {
-		if ((num/denom) > 0xff)
-			pd->icic |= ICIC_ICCLB8;
-		else
-			pd->icic &= ~ICIC_ICCLB8;
-	}
-
-	/* Calculate the value for icch. From the data sheet:
-	   icch = (p clock / transfer rate) * (H / (L + H)) */
-	num = i2c_clk * 4;
-	tmp = num * 10 / denom;
-	if (tmp % 10 >= 5)
-		pd->icch = (u_int8_t)((num/denom) + 1);
-	else
-		pd->icch = (u_int8_t)(num/denom);
-
-	/* one more bit of ICCH in ICIC */
-	if (pd->flags & IIC_FLAG_HAS_ICIC67) {
-		if ((num/denom) > 0xff)
-			pd->icic |= ICIC_ICCHB8;
-		else
-			pd->icic &= ~ICIC_ICCHB8;
-	}
-
 	/* Enable channel and configure rx ack */
+	iic_wr(pd, ICCR, 1);
 	iic_set_clr(pd, ICCR, ICCR_ICE, 0);
 
 	/* Mask all interrupts */
 	iic_wr(pd, ICIC, 0);
-
+	iic_wr(pd, ICTC, (iic_rd(pd, ICTC) & UNMASK_ICTC_BITS_0TO2)|
+			(pd->bus_data_delay & UNMASK_DATA_DELAY_3TO7));
 	/* Set the clock */
-	iic_wr(pd, ICCL, pd->iccl);
-	iic_wr(pd, ICCH, pd->icch);
+	iic_wr(pd, ICCL, pd->iccl & 0xff);
+	iic_wr(pd, ICCH, pd->icch & 0xff);
 }
 
 static void deactivate_ch(struct sh_mobile_i2c_data *pd)
 {
+	struct i2c_sh_mobile_platform_data *pdata = pd->dev->platform_data;
+
 	/* Clear/disable interrupts */
 	iic_wr(pd, ICSR, 0);
 	iic_wr(pd, ICIC, 0);
 
 	/* Disable channel */
-	iic_set_clr(pd, ICCR, 0, ICCR_ICE);
+	iic_wr(pd, ICCR, 0);
+	iic_sync(pd);
 
 	/* Disable clock and mark device as idle */
 	clk_disable(pd->clk);
 	pm_runtime_put_sync(pd->dev);
+
+	if (pdata->pin_multi) {
+		gpio_free(pdata->scl_info.port_func);
+		gpio_free(pdata->sda_info.port_func);
+		gpio_request(pdata->scl_info.port_num, NULL);
+		gpio_request(pdata->sda_info.port_num, NULL);
+		gpio_direction_input(pdata->scl_info.port_num);
+		gpio_direction_input(pdata->sda_info.port_num);
+		gpio_direction_none_port(pdata->scl_info.port_num);
+		gpio_direction_none_port(pdata->sda_info.port_num);
+	}
 }
 
 static unsigned char i2c_op(struct sh_mobile_i2c_data *pd,
@@ -351,9 +438,10 @@ static int sh_mobile_i2c_isr_tx(struct sh_mobile_i2c_data *pd)
 
 	sh_mobile_i2c_get_data(pd, &data);
 
-	if (sh_mobile_i2c_is_last_byte(pd))
+	if ((sh_mobile_i2c_is_last_byte(pd)) &&
+	    (pd->curr_msg == pd->msgs_num - 1)) { /* last message? */
 		i2c_op(pd, OP_TX_STOP, data);
-	else if (sh_mobile_i2c_is_first_byte(pd))
+	} else if (sh_mobile_i2c_is_first_byte(pd))
 		i2c_op(pd, OP_TX_FIRST, data);
 	else
 		i2c_op(pd, OP_TX, data);
@@ -385,7 +473,8 @@ static int sh_mobile_i2c_isr_rx(struct sh_mobile_i2c_data *pd)
 
 		real_pos = pd->pos - 2;
 
-		if (pd->pos == pd->msg->len) {
+		if ((pd->pos == pd->msg->len) &&
+		    (pd->curr_msg == pd->msgs_num - 1)) { /* last message? */
 			if (real_pos < 0) {
 				i2c_op(pd, OP_RX_STOP, 0);
 				break;
@@ -409,6 +498,8 @@ static irqreturn_t sh_mobile_i2c_isr(int irq, void *dev_id)
 	unsigned char sr;
 	int wakeup;
 
+	pd->msg = &pd->msgs[pd->curr_msg]; /* load current pd->msg */
+
 	sr = iic_rd(pd, ICSR);
 	pd->sr |= sr; /* remember state */
 
@@ -425,35 +516,49 @@ static irqreturn_t sh_mobile_i2c_isr(int irq, void *dev_id)
 	else
 		wakeup = sh_mobile_i2c_isr_tx(pd);
 
-	if (sr & ICSR_WAIT) /* TODO: add delay here to support slow acks */
+	if (wakeup) {
+
+		if (pd->curr_msg < (pd->msgs_num - 1)) {
+		pd->curr_msg++;
+		pd->pos = -1;
+			i2c_op(pd, OP_START, 0);
+			wakeup = 0;
+		} else
+			wakeup = 1;
+
+		iic_wr(pd, ICIC, ICIC_DTEE | ICIC_WAITE | ICIC_ALE | ICIC_TACKE);
+	}
+
+	if (sr & ICSR_WAIT) { /* TODO: add delay here to support slow acks */
 		iic_wr(pd, ICSR, sr & ~ICSR_WAIT);
+	}
 
 	if (wakeup) {
 		pd->sr |= SW_DONE;
 		wake_up(&pd->wait);
 	}
 
+	/* defeat write posting to avoid spurious WAIT interrupts */
+	iic_rd(pd, ICSR);
+	/* get I/O synced to avoid spurious WAIT interrupts */
+	iic_sync(pd);
+
 	return IRQ_HANDLED;
 }
 
-static int start_ch(struct sh_mobile_i2c_data *pd, struct i2c_msg *usr_msg)
+static int
+start_ch(struct sh_mobile_i2c_data *pd, struct i2c_msg *usr_msg, int num)
 {
 	if (usr_msg->len == 0 && (usr_msg->flags & I2C_M_RD)) {
 		dev_err(pd->dev, "Unsupported zero length i2c read\n");
 		return -EIO;
 	}
 
-	/* Initialize channel registers */
-	iic_set_clr(pd, ICCR, 0, ICCR_ICE);
 
-	/* Enable channel and configure rx ack */
-	iic_set_clr(pd, ICCR, ICCR_ICE, 0);
-
-	/* Set the clock */
-	iic_wr(pd, ICCL, pd->iccl);
-	iic_wr(pd, ICCH, pd->icch);
-
-	pd->msg = usr_msg;
+	pd->msg = NULL;
+	pd->msgs = usr_msg;
+	pd->msgs_num = num;
+	pd->curr_msg = 0;
 	pd->pos = -1;
 	pd->sr = 0;
 
@@ -462,64 +567,72 @@ static int start_ch(struct sh_mobile_i2c_data *pd, struct i2c_msg *usr_msg)
 	return 0;
 }
 
+atomic_t timeout_wa;
+
 static int sh_mobile_i2c_xfer(struct i2c_adapter *adapter,
 			      struct i2c_msg *msgs,
 			      int num)
 {
 	struct sh_mobile_i2c_data *pd = i2c_get_adapdata(adapter);
-	struct i2c_msg	*msg;
 	int err = 0;
 	u_int8_t val;
-	int i, k, retry_count;
+	int k, retry_count, ttimeout = 0;
+	int timeout_jiffies = 1 * HZ;
 
 	activate_ch(pd);
 
-	/* Process all messages */
-	for (i = 0; i < num; i++) {
-		msg = &msgs[i];
+	err = start_ch(pd, msgs, num);
+	if (err)
+		goto quit;
 
-		err = start_ch(pd, msg);
-		if (err)
-			break;
+	i2c_op(pd, OP_START, 0);
 
-		i2c_op(pd, OP_START, 0);
-
-		/* The interrupt handler takes care of the rest... */
-		k = wait_event_timeout(pd->wait,
-				       pd->sr & (ICSR_TACK | SW_DONE),
-				       5 * HZ);
-		if (!k)
-			dev_err(pd->dev, "Transfer request timed out\n");
-
-		retry_count = 1000;
-again:
-		val = iic_rd(pd, ICSR);
-
-		dev_dbg(pd->dev, "val 0x%02x pd->sr 0x%02x\n", val, pd->sr);
-
-		/* the interrupt handler may wake us up before the
-		 * transfer is finished, so poll the hardware
-		 * until we're done.
-		 */
-		if (val & ICSR_BUSY) {
-			udelay(10);
-			if (retry_count--)
-				goto again;
-
-			err = -EIO;
-			dev_err(pd->dev, "Polling timed out\n");
-			break;
-		}
-
-		/* handle missing acknowledge and arbitration lost */
-		if ((val | pd->sr) & (ICSR_TACK | ICSR_AL)) {
-			err = -EIO;
-			break;
-		}
+	if (adapter->nr == 0 && atomic_read(&timeout_wa)) {
+		timeout_jiffies = msecs_to_jiffies(
+							atomic_read(&timeout_wa));
 	}
 
-	deactivate_ch(pd);
+	/* The interrupt handler takes care of the rest... */
+	k = wait_event_timeout(pd->wait,
+			       pd->sr & (ICSR_TACK | SW_DONE),
+			       timeout_jiffies);
+	if (!k) {
+		err = -EAGAIN;
+		ttimeout = 1;
+	}
+	retry_count = 1000;
+again:
+	val = iic_rd(pd, ICSR);
 
+	dev_dbg(pd->dev, "val 0x%02x pd->sr 0x%02x\n", val, pd->sr);
+
+	/* the interrupt handler may wake us up before the
+	 * transfer is finished, so poll the hardware
+	 * until we're done.
+	 */
+	if (val & ICSR_BUSY) {
+		udelay(10);
+		if (retry_count--)
+			goto again;
+
+		err = -EIO;
+		dev_err(pd->dev, "Polling timed out\n");
+		goto quit;
+	}
+
+	/* handle missing acknowledge and arbitration lost */
+	if ((val | pd->sr) & (ICSR_TACK | ICSR_AL)) {
+		err = -EAGAIN;
+	}
+
+ quit:
+	deactivate_ch(pd);
+	if ((-EAGAIN) == err) {
+		if (ttimeout)
+			dev_err(pd->dev, "Transfer request timed out\n");
+		else
+			dev_err(pd->dev, "NACK or AL\n");
+	}
 	if (!err)
 		err = num;
 	return err;
@@ -620,16 +733,25 @@ static int sh_mobile_i2c_probe(struct platform_device *dev)
 		goto err_irq;
 	}
 
-	/* Use platformd data bus speed or NORMAL_SPEED */
-	pd->bus_speed = NORMAL_SPEED;
+	/* Use platform data bus speed or STANDARD_MODE */
+	pd->bus_speed = STANDARD_MODE;
 	if (pdata && pdata->bus_speed)
 		pd->bus_speed = pdata->bus_speed;
-
+	pd->clks_per_count = 1;
+	if (pdata && pdata->clks_per_count)
+		pd->clks_per_count = pdata->clks_per_count;
+	if (pdata && (pdata->bus_data_delay <= MAX_SDA_DELAY))
+		pd->bus_data_delay = pdata->bus_data_delay <<
+							SHIFT_3BITS_SDA_DELAY;
+	else
+		pd->bus_data_delay = MIN_SDA_DELAY;
 	/* The IIC blocks on SH-Mobile ARM processors
 	 * come with two new bits in ICIC.
 	 */
 	if (size > 0x17)
 		pd->flags |= IIC_FLAG_HAS_ICIC67;
+
+	sh_mobile_i2c_init(pd);
 
 	/* Enable Runtime PM for this device.
 	 *
@@ -665,8 +787,20 @@ static int sh_mobile_i2c_probe(struct platform_device *dev)
 		goto err_all;
 	}
 
-	dev_info(&dev->dev, "I2C adapter %d with bus speed %lu Hz\n",
-		 adap->nr, pd->bus_speed);
+	if (pdata->pin_multi) {
+		gpio_free(pdata->scl_info.port_func);
+		gpio_free(pdata->sda_info.port_func);
+		gpio_request(pdata->scl_info.port_num, NULL);
+		gpio_request(pdata->sda_info.port_num, NULL);
+		gpio_direction_input(pdata->scl_info.port_num);
+		gpio_direction_input(pdata->sda_info.port_num);
+		gpio_direction_none_port(pdata->scl_info.port_num);
+		gpio_direction_none_port(pdata->sda_info.port_num);
+	}
+
+	dev_info(&dev->dev,
+		 "I2C adapter %d with bus speed %lu Hz (ICCH:ICCL=%x:%x)\n",
+		 adap->nr, pd->bus_speed, pd->icch, pd->iccl);
 	return 0;
 
  err_all:

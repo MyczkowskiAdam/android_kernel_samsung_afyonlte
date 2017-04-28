@@ -624,6 +624,15 @@ config I2C_SH7760
 	  This driver can also be built as a module.  If so, the module
 	  will be called i2c-sh7760.
 
+config I2C_SH7730
+	tristate "Renesas SH7730 I2C Controller"
+	depends on SUPERH || ARCH_SHMOBILE
+	help
+	  This driver supports the 2 I2C interfaces on the Renesas SH7730.
+
+	  This driver can also be built as a module.  If so, the module
+	  will be called i2c-sh7730.
+
 config I2C_SH_MOBILE
 	tristate "SuperH Mobile I2C Controller"
 	depends on SUPERH || ARCH_SHMOBILE

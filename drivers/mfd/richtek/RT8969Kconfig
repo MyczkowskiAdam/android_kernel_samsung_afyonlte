@@ -1,0 +1,165 @@
+#
+# Richtek programmable micro USB switch RT8969 drivers configuration
+#
+# Copyright (C) Richtek Corporation 2012
+# Patrick Chang <patrick_chang@richtek.com>
+
+config RT8969_STDUSB_CHG_CTRL1
+    hex "Charger Control Reg1 of Standard USB Charger"
+    default "0xc8"
+    ---help---
+    TBD
+
+config RT8969_STDUSB_CHG_CTRL2
+    hex "Charger Control Reg2 of Standard USB Charger"
+    default "0x21"
+    ---help---
+    TBD
+
+config RT8969_TA_CHG_CTRL1
+    hex "Charger Control Reg1 of Travel Adapter or Car Kit Type 1 Charger"
+    default "0xc8"
+    ---help---
+    TBD
+
+config RT8969_TA_CHG_CTRL2
+    hex "Charger Control Reg2 of Travel Adapter or Car Kit Type 1 Charger"
+    default "0x21"
+    ---help---
+    TBD
+
+config RT8969_DCP_CHG_CTRL1
+    hex "Charger Control Reg1 of Dedicated Charger Port"
+    default "0xc8"
+    ---help---
+    TBD
+
+config RT8969_DCP_CHG_CTRL2
+    hex "Charger Control Reg2 of Dedicated Charger Port"
+    default "0x21"
+    ---help---
+    TBD
+
+config RT8969_CDP_CHG_CTRL1
+    hex "Charger Control Reg1 of High Current Host/Hub or Charger Downstream Port"
+    default "0xc8"
+    ---help---
+    TBD
+
+config RT8969_CDP_CHG_CTRL2
+    hex "Charger Control Reg2 of High Current Host/Hub or Charger Downstream Port"
+    default "0x21"
+    ---help---
+    TBD
+config RT8969_CHGDONE_CHG_CTRL1
+    hex "Charger Control Reg1 of Charging Completed"
+    default "0x48"
+    ---help---
+    TBD
+
+config RT8969_CHGDONE_CHG_CTRL2
+    hex "Charger Control Reg2 of Charging Completed"
+    default "0x21"
+    ---help---
+    TBD
+
+choice
+depends on RT8969
+prompt "Initial Setting of Pre-Charging Current"
+default RT8969_IPRE_SET_MODE10
+config RT8969_IPRE_SET_MODE00
+    bool "40mA"
+config RT8969_IPRE_SET_MODE01
+    bool "60mA"
+config RT8969_IPRE_SET_MODE10
+    bool "80mA"
+config RT8969_IPRE_SET_MODE11
+    bool "100mA"
+endchoice
+
+choice
+depends on RT8969
+prompt "Initial Setting of Fast Charging Current"
+default RT8969_ICHG_SET_MODE0010
+config RT8969_ICHG_SET_MODE0000
+    bool "90mA"
+config RT8969_ICHG_SET_MODE0001
+    bool "100mA"
+config RT8969_ICHG_SET_MODE0010
+    bool "400mA"
+config RT8969_ICHG_SET_MODE0011
+    bool "450mA"
+config RT8969_ICHG_SET_MODE0100
+    bool "500mA"
+config RT8969_ICHG_SET_MODE0101
+    bool "600mA"
+config RT8969_ICHG_SET_MODE0110
+    bool "700mA"
+config RT8969_ICHG_SET_MODE0111
+    bool "800mA"
+config RT8969_ICHG_SET_MODE1000
+    bool "900mA"
+config RT8969_ICHG_SET_MODE1001
+    bool "1000mA"
+endchoice
+
+choice
+depends on RT8969
+prompt "Initial Setting of End of Charge Current Ratio"
+default RT8969_EOC_SET_MODE000
+config RT8969_ECO_SET_MODE000
+    bool "5%"
+config RT8969_ECO_SET_MODE001
+    bool "10%"
+config RT8969_ECO_SET_MODE010
+    bool "16%"
+config RT8969_ECO_SET_MODE011
+    bool "20%"
+config RT8969_ECO_SET_MODE100
+    bool "25%"
+config RT8969_ECO_SET_MODE101
+    bool "33%"
+config RT8969_ECO_SET_MODE110
+    bool "50%"
+config RT8969_ECO_SET_MODE111
+    bool "Disable EOC"
+endchoice
+
+
+choice
+depends on RT8969
+prompt "Initial Setting of Battery Regulation Voltage"
+default RT8969_VREG_MODE0000
+config RT8969_VREG_MODE0000
+    bool "4.2V"
+config RT8969_VREG_MODE0001
+    bool "4.21V"
+config RT8969_VREG_MODE0010
+    bool "4.22V"
+config RT8969_VREG_MODE0011
+    bool "4.23V"
+config RT8969_VREG_MODE0100
+    bool "4.24V"
+config RT8969_VREG_MODE0101
+    bool "4.25V"
+config RT8969_VREG_MODE0110
+    bool "4.26V"
+config RT8969_VREG_MODE0111
+    bool "4.27V"
+config RT8969_VREG_MODE1000
+    bool "4.28V"
+config RT8969_VREG_MODE1001
+    bool "4.29V"
+config RT8969_VREG_MODE1010
+    bool "4.30V"
+config RT8969_VREG_MODE1011
+    bool "4.31V"
+config RT8969_VREG_MODE1100
+    bool "4.32V"
+config RT8969_VREG_MODE1101
+    bool "4.33V"
+config RT8969_VREG_MODE1110
+    bool "4.34V"
+config RT8969_VREG_MODE1111
+    bool "4.35"
+endchoice

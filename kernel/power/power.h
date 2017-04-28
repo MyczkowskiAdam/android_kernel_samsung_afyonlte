@@ -1,3 +1,9 @@
+/*
+ * kernel/power/power.h
+ *
+ * Copyright (C) 2012 Renesas Mobile Corporation
+ */
+
 #include <linux/suspend.h>
 #include <linux/suspend_ioctls.h>
 #include <linux/utsname.h>
@@ -177,6 +183,11 @@ extern const char *const pm_states[];
 
 extern bool valid_state(suspend_state_t state);
 extern int suspend_devices_and_enter(suspend_state_t state);
+extern int enter_state(suspend_state_t state);
+#ifdef CONFIG_PM_DEBUG
+extern int control_systemsuspend(int is_enabled);
+extern int is_systemsuspend_enable(void);
+#endif	/* CONFIG_PM_DEBUG */
 #else /* !CONFIG_SUSPEND */
 static inline int suspend_devices_and_enter(suspend_state_t state)
 {
@@ -193,6 +204,7 @@ extern void suspend_test_finish(const char *label);
 static inline void suspend_test_start(void) {}
 static inline void suspend_test_finish(const char *label) {}
 #endif /* !CONFIG_PM_TEST_SUSPEND */
+
 
 #ifdef CONFIG_PM_SLEEP
 /* kernel/power/main.c */
@@ -263,4 +275,33 @@ static inline int suspend_freeze_processes(void)
 static inline void suspend_thaw_processes(void)
 {
 }
+#endif
+
+#ifdef CONFIG_WAKELOCK
+/* kernel/power/wakelock.c */
+extern struct workqueue_struct *suspend_work_queue;
+extern struct wake_lock main_wake_lock;
+extern suspend_state_t requested_suspend_state;
+extern void suspend_sys_sync_queue(void);
+extern int suspend_sys_sync_wait(void);
+#else
+static inline void suspend_sys_sync_queue(void) {}
+static inline int suspend_sys_sync_wait(void) { return 0; }
+#endif
+
+#ifdef CONFIG_USER_WAKELOCK
+ssize_t wake_lock_show(struct kobject *kobj, struct kobj_attribute *attr,
+			char *buf);
+ssize_t wake_lock_store(struct kobject *kobj, struct kobj_attribute *attr,
+			const char *buf, size_t n);
+ssize_t wake_unlock_show(struct kobject *kobj, struct kobj_attribute *attr,
+			char *buf);
+ssize_t  wake_unlock_store(struct kobject *kobj, struct kobj_attribute *attr,
+			const char *buf, size_t n);
+#endif
+
+#ifdef CONFIG_EARLYSUSPEND
+/* kernel/power/earlysuspend.c */
+void request_suspend_state(suspend_state_t state);
+suspend_state_t get_suspend_state(void);
 #endif

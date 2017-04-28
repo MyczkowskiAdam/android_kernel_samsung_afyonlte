@@ -1,0 +1,35 @@
+menuconfig PMIC_INTERFACE
+	tristate "PowerManagement IC interface support"
+	help
+	  This enables support for the PowerManagement IC interface.
+	  This feature inclue power control management.
+	  and battery control management.
+
+if PMIC_INTERFACE
+config USB_OTG_INTERFACE
+	bool "USB-OTG IC interface support"
+	default n
+	help
+	  This enables support for the USB-OTG interface.
+	  This feature control power supply for USB OTG.
+	  device via PMIC.
+	  (supply 5V).
+
+config PMIC_TPS80032_POW
+	bool "TPS80032 Power Department Support"
+	default n
+	help
+	  This enables support for the Power Department interface.
+	  This feature is not belong to PMIC driver.
+	  It's dependecy driver.
+
+config PMIC_NCP6914_POW
+	bool "NCP6914 Power Department Support"
+	default m
+	help
+	  This enables support for the Power Department interface.
+	  This feature is not belong to PMIC driver.
+	  It's dependecy driver.
+
+endif # PMIC_INTERFACE
+

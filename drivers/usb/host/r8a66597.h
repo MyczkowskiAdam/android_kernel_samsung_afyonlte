@@ -1,7 +1,10 @@
 /*
  * R8A66597 HCD (Host Controller Driver)
  *
+ * drivers/usb/host/r8a66597.h
+ * 
  * Copyright (C) 2006-2007 Renesas Solutions Corp.
+ * Copyright (C) 2012 Renesas Mobile Corporation
  * Portions Copyright (C) 2004 Psion Teklogix (for NetBook PRO)
  * Portions Copyright (C) 2004-2005 David Brownell
  * Portions Copyright (C) 1999 Roman Weissgaerber
@@ -137,6 +140,16 @@ struct r8a66597 {
 
 	unsigned bus_suspended:1;
 	unsigned irq_sense_low:1;
+
+	struct delayed_work	vbus_work;
+#ifdef CONFIG_USB_OTG
+	unsigned role;
+	unsigned dttch:1;
+	struct delayed_work	srp_work;
+	struct delayed_work	hnp_work;
+	struct delayed_work	dttch_work;
+#endif
+	unsigned power:1;
 };
 
 static inline struct r8a66597 *hcd_to_r8a66597(struct usb_hcd *hcd)
@@ -347,4 +360,3 @@ static inline u16 get_xtal_from_pdata(struct r8a66597_platdata *pdata)
 	disable_pipe_irq(r8a66597, pipenum, NRDYENB)
 
 #endif	/* __R8A66597_H__ */
-

@@ -119,6 +119,9 @@
 #define ETH_P_PHONET	0x00F5		/* Nokia Phonet frames          */
 #define ETH_P_IEEE802154 0x00F6		/* IEEE802.15.4 frame		*/
 #define ETH_P_CAIF	0x00F7		/* ST-Ericsson CAIF protocol	*/
+#define ETH_P_MHI	0x00F8		/* Renesas MHI protocol         */
+#define ETH_P_RAW	0x00F9		/* RAW access to frames         */
+#define ETH_P_MHDP	0x00FA		/* MHDP data frames             */
 
 /*
  *	This is an Ethernet frame header.
@@ -140,8 +143,14 @@ static inline struct ethhdr *eth_hdr(const struct sk_buff *skb)
 
 int eth_header_parse(const struct sk_buff *skb, unsigned char *haddr);
 
+#ifdef CONFIG_SYSCTL
+extern struct ctl_table *ether_table;
+#endif
+
 int mac_pton(const char *s, u8 *mac);
 extern ssize_t sysfs_format_mac(char *buf, const unsigned char *addr, int len);
+
+#define MAC_FMT "%02x:%02x:%02x:%02x:%02x:%02x"
 
 #endif
 

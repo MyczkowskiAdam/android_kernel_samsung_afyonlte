@@ -30,7 +30,8 @@
 #include <linux/sched.h>
 #include <linux/i2c.h>
 #include <linux/i2c-algo-bit.h>
-
+#include <mach/gpio.h>
+#include <linux/io.h>
 
 /* ----- global defines ----------------------------------------------- */
 
@@ -65,22 +66,45 @@ MODULE_PARM_DESC(i2c_debug,
 #define getsda(adap)		adap->getsda(adap->data)
 #define getscl(adap)		adap->getscl(adap->data)
 
+
+#define MAX_USE_HALF_UDELAY	20
+
+inline void half_udelay(unsigned long half_usecs)
+{
+	int cnt;
+	/*
+	 * If half_usecs value is greater than MAX_USE_HALFDELAY,
+	 * Use udelay().
+	 */
+	if( half_usecs >= MAX_USE_HALF_UDELAY )
+	{
+		udelay(( half_usecs + 1 ) / 2);
+	}
+	else
+	{
+		for( cnt = 0; cnt < half_usecs; cnt++ )
+		{
+			/* dummy read (one access: about 0.5usec) */
+			(void)__raw_readb(GPIO_PORTCR(26));
+		}
+	}
+}
+
 static inline void sdalo(struct i2c_algo_bit_data *adap)
 {
 	setsda(adap, 0);
-	udelay((adap->udelay + 1) / 2);
+	half_udelay(adap->udelay * 2 + 1);
 }
 
 static inline void sdahi(struct i2c_algo_bit_data *adap)
 {
 	setsda(adap, 1);
-	udelay((adap->udelay + 1) / 2);
+	half_udelay(adap->udelay * 2 + 1);
 }
 
 static inline void scllo(struct i2c_algo_bit_data *adap)
 {
 	setscl(adap, 0);
-	udelay(adap->udelay / 2);
 }
 
 /*
@@ -121,7 +145,7 @@ static int sclhi(struct i2c_algo_bit_data *adap)
 #endif
 
 done:
-	udelay(adap->udelay);
+	half_udelay(adap->udelay);
 	return 0;
 }
 
@@ -131,7 +155,7 @@ static void i2c_start(struct i2c_algo_bit_data *adap)
 {
 	/* assert: scl, sda are high */
 	setsda(adap, 0);
-	udelay(adap->udelay);
+	half_udelay(adap->udelay * 2);
 	scllo(adap);
 }
 
@@ -141,7 +165,7 @@ static void i2c_repstart(struct i2c_algo_bit_data *adap)
 	sdahi(adap);
 	sclhi(adap);
 	setsda(adap, 0);
-	udelay(adap->udelay);
+	half_udelay(adap->udelay * 2);
 	scllo(adap);
 }
 
@@ -152,7 +176,7 @@ static void i2c_stop(struct i2c_algo_bit_data *adap)
 	sdalo(adap);
 	sclhi(adap);
 	setsda(adap, 1);
-	udelay(adap->udelay);
+	half_udelay(adap->udelay * 2);
 }
 
 
@@ -175,7 +199,7 @@ static int i2c_outb(struct i2c_adapter *i2c_adap, unsigned char c)
 	for (i = 7; i >= 0; i--) {
 		sb = (c >> i) & 1;
 		setsda(adap, sb);
-		udelay((adap->udelay + 1) / 2);
+		half_udelay(adap->udelay + 1);
 		if (sclhi(adap) < 0) { /* timed out */
 			bit_dbg(1, &i2c_adap->dev, "i2c_outb: 0x%02x, "
 				"timeout at bit #%d\n", (int)c, i);
@@ -229,7 +253,7 @@ static int i2c_inb(struct i2c_adapter *i2c_adap)
 		if (getsda(adap))
 			indata |= 0x01;
 		setscl(adap, 0);
-		udelay(i == 7 ? adap->udelay / 2 : adap->udelay);
+		half_udelay(i == 7 ? adap->udelay : adap->udelay * 2 + 1);
 	}
 	/* assert: scl is low */
 	return indata;
@@ -352,7 +376,7 @@ static int try_address(struct i2c_adapter *i2c_adap,
 			break;
 		bit_dbg(3, &i2c_adap->dev, "emitting stop condition\n");
 		i2c_stop(adap);
-		udelay(adap->udelay);
+		half_udelay(adap->udelay * 2);
 		yield();
 		bit_dbg(3, &i2c_adap->dev, "emitting start condition\n");
 		i2c_start(adap);
@@ -413,7 +437,7 @@ static int acknak(struct i2c_adapter *i2c_adap, int is_ack)
 	/* assert: sda is high */
 	if (is_ack)		/* send ack */
 		setsda(adap, 0);
-	udelay((adap->udelay + 1) / 2);
+	half_udelay(adap->udelay + 1);
 	if (sclhi(adap) < 0) {	/* timeout */
 		dev_err(&i2c_adap->dev, "readbytes: ack/nak timeout\n");
 		return -ETIMEDOUT;
@@ -546,6 +570,9 @@ static int bit_xfer(struct i2c_adapter *i2c_adap,
 	int i, ret;
 	unsigned short nak_ok;
 
+	setsda(adap, 1);
+	setscl(adap, 1);
+
 	if (adap->pre_xfer) {
 		ret = adap->pre_xfer(i2c_adap);
 		if (ret < 0)
@@ -603,6 +630,10 @@ bailout:
 
 	if (adap->post_xfer)
 		adap->post_xfer(i2c_adap);
+
+	setsda(adap, -1);
+	setscl(adap, -1);
+
 	return ret;
 }
 

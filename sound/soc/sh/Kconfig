@@ -33,6 +33,25 @@ config SND_SOC_SH4_SIU
 	select SH_DMAE
 	select FW_LOADER
 
+config SND_SOC_AUDIO_TEST_D2153
+	tristate
+
+config SND_SOC_AUDIENCE_A2220
+	tristate "AUDIENCE-A2220 sound support"
+	depends on I2C
+
+config SND_SOC_FM34_WE395
+	tristate "Forte Media 2MIC driver"
+	depends on I2C
+	help
+	  This is Forte media voice solution devices.
+
+config SND_SOC_TI_TPA2026
+	tristate "TI-TPA2026 sound support"
+	depends on I2C
+	help
+	  This is TPA2026 amp driver.
+
 ##
 ## Boards
 ##
@@ -61,6 +80,15 @@ config SND_FSI_DA7210
 	help
 	  This option enables generic sound support for the
 	  FSI - DA7210 unit
+
+config SND_FSI_D2153
+	tristate "FSI-D2153 sound support"
+	depends on SND_SOC_SH4_FSI && I2C
+	select SND_SOC_D2153
+	select SND_SOC_AUDIO_TEST_D2153
+	help
+	  This option enables generic sound support for the
+	  FSI - d2153 unit
 
 config SND_FSI_HDMI
 	tristate "FSI-HDMI sound support"

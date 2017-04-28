@@ -19,9 +19,9 @@
 #include <linux/ctype.h>
 #include <linux/etherdevice.h>
 #include <linux/ethtool.h>
-
+#include <linux/highmem.h>
 #include "u_ether.h"
-
+#include "rndis.h"
 
 /*
  * This component encapsulates the Ethernet link glue needed to provide
@@ -46,40 +46,28 @@
 
 #define UETH__VERSION	"29-May-2008"
 
-struct eth_dev {
-	/* lock is held while accessing port_usb
-	 * or updating its backlink port_usb->ioport
-	 */
-	spinlock_t		lock;
-	struct gether		*port_usb;
 
-	struct net_device	*net;
-	struct usb_gadget	*gadget;
 
-	spinlock_t		req_lock;	/* guard {rx,tx}_reqs */
-	struct list_head	tx_reqs, rx_reqs;
-	atomic_t		tx_qlen;
 
-	struct sk_buff_head	rx_frames;
+static struct rndis_multiframe {
+	struct net_device       *net;
+	struct usb_ep		*in;
+	struct sk_buff		*skb;
+	struct sk_buff *rndis_frame[MAX_RNDIS_FRAME_COUNT];
+	struct hrtimer tx_timer;
+	struct tasklet_struct taskl;
+} multiframe_struct ;
 
-	unsigned		header_len;
-	struct sk_buff		*(*wrap)(struct gether *, struct sk_buff *skb);
-	int			(*unwrap)(struct gether *,
-						struct sk_buff *skb,
-						struct sk_buff_head *list);
 
-	struct work_struct	work;
-
-	unsigned long		todo;
-#define	WORK_RX_MEMORY		0
-
-	bool			zlp;
-	u8			host_mac[ETH_ALEN];
-};
+/* prototyyppi */
+static void eth_start_xmit_usb(struct rndis_multiframe *multiframe);
+static enum hrtimer_restart multiframe_timer_timeout(struct hrtimer *timer);
+static void multiframe_timer_timeout_tasklet(unsigned long arg);
+static	DEFINE_SPINLOCK(timer_lock);
 
 /*-------------------------------------------------------------------------*/
 
-#define RX_EXTRA	20	/* bytes guarding against rx overflows */
+#define RX_EXTRA	22	/* bytes guarding against rx overflows */
 
 #define DEFAULT_QLEN	2	/* double buffering by default */
 
@@ -142,6 +130,24 @@ static inline int qlen(struct usb_gadget *gadget)
 /*-------------------------------------------------------------------------*/
 
 /* NETWORK DRIVER HOOKUP (to the layer above this driver) */
+static enum hrtimer_restart multiframe_timer_timeout(struct hrtimer *timer)
+{
+	struct rndis_multiframe *multiframe = container_of(timer, struct rndis_multiframe, tx_timer);
+
+	tasklet_hi_schedule(&multiframe->taskl);
+
+	return HRTIMER_NORESTART;
+}
+
+static void multiframe_timer_timeout_tasklet(unsigned long arg)
+{
+	struct rndis_multiframe *multiframe = (struct rndis_multiframe *) arg;
+
+	spin_lock(&timer_lock);
+	eth_start_xmit_usb(multiframe);
+	spin_unlock(&timer_lock);
+}
+
 
 static int ueth_change_mtu(struct net_device *net, int new_mtu)
 {
@@ -227,15 +233,23 @@ rx_submit(struct eth_dev *dev, struct usb_request *req, gfp_t gfp_flags)
 	 * means receivers can't recover lost synch on their own (because
 	 * new packets don't only start after a short RX).
 	 */
-	size += sizeof(struct ethhdr) + dev->net->mtu + RX_EXTRA;
-	size += dev->port_usb->header_len;
+#if RNDIS_UL_MULTIFRAME_SUPPORT > 0
+	size += RNDIS_UL_MULTIFRAME_SUPPORT * (sizeof(struct ethhdr) +
+					dev->net->mtu + RX_EXTRA);
+	size += RNDIS_UL_MULTIFRAME_SUPPORT * (dev->port_usb->header_len);
 	size += out->maxpacket - 1;
 	size -= size % out->maxpacket;
-
+#else
+	size += (sizeof(struct ethhdr) + dev->net->mtu + RX_EXTRA);
+	size += (dev->port_usb->header_len);
+	size += out->maxpacket - 1;
+	size -= size % out->maxpacket;
+#endif
 	if (dev->port_usb->is_fixed)
 		size = max_t(size_t, size, dev->port_usb->fixed_out_len);
 
-	skb = alloc_skb(size + NET_IP_ALIGN, gfp_flags);
+	skb = alloc_skb(size , gfp_flags);
+
 	if (skb == NULL) {
 		DBG(dev, "no rx skb\n");
 		goto enomem;
@@ -245,7 +259,6 @@ rx_submit(struct eth_dev *dev, struct usb_request *req, gfp_t gfp_flags)
 	 * but on at least one, checksumming fails otherwise.  Note:
 	 * RNDIS headers involve variable numbers of LE32 values.
 	 */
-	skb_reserve(skb, NET_IP_ALIGN);
 
 	req->buf = skb->data;
 	req->length = size;
@@ -457,7 +470,6 @@ static void tx_complete(struct usb_ep *ep, struct usb_request *req)
 {
 	struct sk_buff	*skb = req->context;
 	struct eth_dev	*dev = ep->driver_data;
-
 	switch (req->status) {
 	default:
 		dev->net->stats.tx_errors++;
@@ -467,13 +479,15 @@ static void tx_complete(struct usb_ep *ep, struct usb_request *req)
 	case -ESHUTDOWN:		/* disconnect etc */
 		break;
 	case 0:
-		dev->net->stats.tx_bytes += skb->len;
+		dev->net->stats.tx_bytes += skb->data_len;
 	}
-	dev->net->stats.tx_packets++;
+	dev->net->stats.tx_packets += skb_shinfo(skb)->nr_frags;
 
 	spin_lock(&dev->req_lock);
 	list_add(&req->list, &dev->tx_reqs);
 	spin_unlock(&dev->req_lock);
+
+	kfree(req->buf);
 	dev_kfree_skb_any(skb);
 
 	atomic_dec(&dev->tx_qlen);
@@ -486,16 +500,21 @@ static inline int is_promisc(u16 cdc_filter)
 	return cdc_filter & USB_CDC_PACKET_TYPE_PROMISCUOUS;
 }
 
+
+
 static netdev_tx_t eth_start_xmit(struct sk_buff *skb,
 					struct net_device *net)
 {
-	struct eth_dev		*dev = netdev_priv(net);
-	int			length = skb->len;
-	int			retval;
-	struct usb_request	*req = NULL;
-	unsigned long		flags;
-	struct usb_ep		*in;
+	unsigned long	flags;
 	u16			cdc_filter;
+	struct page *page = NULL;
+	int offset = 0;
+	struct usb_ep		*in;
+	struct eth_dev		*dev = netdev_priv(net);
+	struct rndis_multiframe *multiframe = &multiframe_struct;
+
+
+	spin_lock(&timer_lock);
 
 	spin_lock_irqsave(&dev->lock, flags);
 	if (dev->port_usb) {
@@ -509,6 +528,8 @@ static netdev_tx_t eth_start_xmit(struct sk_buff *skb,
 
 	if (!in) {
 		dev_kfree_skb_any(skb);
+		spin_unlock(&timer_lock);
+
 		return NETDEV_TX_OK;
 	}
 
@@ -528,96 +549,334 @@ static netdev_tx_t eth_start_xmit(struct sk_buff *skb,
 				type = USB_CDC_PACKET_TYPE_ALL_MULTICAST;
 			if (!(cdc_filter & type)) {
 				dev_kfree_skb_any(skb);
+				spin_unlock(&timer_lock);
 				return NETDEV_TX_OK;
 			}
 		}
 		/* ignores USB_CDC_PACKET_TYPE_DIRECTED */
 	}
 
-	spin_lock_irqsave(&dev->req_lock, flags);
 	/*
 	 * this freelist can be empty if an interrupt triggered disconnect()
 	 * and reconfigured the gadget (shutting down this queue) after the
 	 * network stack decided to xmit but before we got the spinlock.
 	 */
+	spin_lock_irqsave(&dev->req_lock, flags);
+
 	if (list_empty(&dev->tx_reqs)) {
 		spin_unlock_irqrestore(&dev->req_lock, flags);
+		spin_unlock(&timer_lock);
 		return NETDEV_TX_BUSY;
 	}
 
-	req = container_of(dev->tx_reqs.next, struct usb_request, list);
-	list_del(&req->list);
-
-	/* temporarily stop TX queue when the freelist empties */
-	if (list_empty(&dev->tx_reqs))
-		netif_stop_queue(net);
 	spin_unlock_irqrestore(&dev->req_lock, flags);
 
-	/* no buffer copies needed, unless the network stack did it
-	 * or the hardware can't use skb buffers.
-	 * or there's not enough space for extra headers we need
-	 */
-	if (dev->wrap) {
+/* I will leave this out now because this will end up in the reallocation procedure         */
+/* which I do not need because I construct the RNDIS header the same time as the multiframa */
+
+/* 	if (dev->wrap) {
 		unsigned long	flags;
 
 		spin_lock_irqsave(&dev->lock, flags);
 		if (dev->port_usb)
 			skb = dev->wrap(dev->port_usb, skb);
 		spin_unlock_irqrestore(&dev->lock, flags);
-		if (!skb)
+		if (unlikely(!skb))
 			goto drop;
 
-		length = skb->len;
 	}
-	req->buf = skb->data;
-	req->context = skb;
-	req->complete = tx_complete;
+ */
 
-	/* NCM requires no zlp if transfer is dwNtbInMaxSize */
-	if (dev->port_usb->is_fixed &&
-	    length == dev->port_usb->fixed_in_len &&
-	    (length % in->maxpacket) == 0)
-		req->zero = 0;
-	else
-		req->zero = 1;
+	if (multiframe->skb == NULL) {
+		multiframe->skb = netdev_alloc_skb(net, 4);
 
-	/* use zlp framing on tx for strict CDC-Ether conformance,
-	 * though any robust network rx path ignores extra padding.
-	 * and some hardware doesn't like to write zlps.
-	 */
-	if (req->zero && !dev->zlp && (length % in->maxpacket) == 0)
-		length++;
+		if (unlikely(!multiframe->skb)) {
+			ERROR(dev, "multiframe allocation failed");
+			goto tx_error;
+		}
 
-	req->length = length;
+		multiframe->net = net;
+		multiframe->in = in;
 
-	/* throttle high/super speed IRQ rate back slightly */
-	if (gadget_is_dualspeed(dev->gadget))
-		req->no_interrupt = (dev->gadget->speed == USB_SPEED_HIGH ||
-				     dev->gadget->speed == USB_SPEED_SUPER)
+/* 		if (hrtimer_active(&multiframe->tx_timer))
+			printk(KERN_DEBUG "DEBUG HRtimer active when allocating multiframe skb\n");
+ */
+		hrtimer_start(&multiframe->tx_timer,
+				ktime_set(0, NSEC_PER_SEC/600),
+				HRTIMER_MODE_REL);
+
+
+
+	}
+
+
+	page = virt_to_page(skb->data);
+
+	if (page == NULL) {
+		ERROR(dev, "kmap_atomic_to_page returns NULL");
+		goto tx_error;
+	}
+
+	get_page(page);
+
+	multiframe->rndis_frame[skb_shinfo(multiframe->skb)->nr_frags] = skb;
+
+	offset = ((unsigned long)skb->data -
+			(unsigned long)page_address(page));
+
+	skb_add_rx_frag(multiframe->skb, skb_shinfo(multiframe->skb)->nr_frags,
+			page, offset, skb_headlen(skb), skb_headlen(skb));
+
+	if ((skb_shinfo(multiframe->skb)->nr_frags == MAX_RNDIS_FRAME_COUNT) ||
+		(multiframe->skb->data_len
+		+(skb_shinfo(multiframe->skb)->nr_frags
+		*(sizeof(struct ethhdr) + dev->port_usb->header_len) + (RNDIS_FRAME_BYTE_ALIGMENT - 1))
+		+ dev->net->mtu + dev->port_usb->header_len +sizeof(struct ethhdr)
+		>= dev->max_host_transfer_size) ||
+		(dev->max_host_transfer_size != 0x4000)) {
+
+		eth_start_xmit_usb(multiframe);
+	}
+	
+	spin_unlock(&timer_lock);
+	return NETDEV_TX_OK;
+
+tx_error:
+	spin_unlock(&timer_lock);
+	dev->net->stats.tx_errors++;
+	dev_kfree_skb_any(skb);
+	return NETDEV_TX_OK;
+}
+
+
+
+
+
+static void eth_start_xmit_usb(struct rndis_multiframe *multiframe)
+{
+
+	struct eth_dev		*dev = netdev_priv(multiframe->net);
+	struct usb_ep		*in = multiframe->in;
+	struct net_device       *net = multiframe->net;
+	int			retval;
+	int			length;
+	struct usb_request	*req = NULL;
+	unsigned long		flags;
+	struct sk_buff *skb = multiframe->skb;
+	struct sk_buff *frag_iter;
+	struct rndis_packet_msg_type *rndis_header;
+
+	skb_frag_t *frag = NULL;
+	int data_copied = 0;
+
+	int i;
+	int total_length = 0;
+
+	if (skb) {
+
+		int	align_off[skb_shinfo(skb)->nr_frags];
+		int	nr_frag = skb_shinfo(skb)->nr_frags;
+
+		if (hrtimer_active(&multiframe->tx_timer))
+			hrtimer_cancel(&multiframe->tx_timer);
+
+		spin_lock_irqsave(&dev->req_lock, flags);
+		/*
+		* this freelist can be empty if an interrupt triggered
+		* disconnect() and reconfigured the gadget
+		* (shutting down this queue) after the
+		* network stack decided to xmit but before we got the spinlock.
+		*/
+		if (list_empty(&dev->tx_reqs)) {
+			spin_unlock_irqrestore(&dev->req_lock, flags);
+
+			dev->net->stats.tx_dropped += nr_frag;
+
+			for (i = 0; i < nr_frag; i++) {
+				if (multiframe->rndis_frame[i])
+					dev_kfree_skb_any(
+						multiframe->rndis_frame[i]);
+				else
+					ERROR(dev, "error no skb to free\n");
+			}
+
+			dev_kfree_skb_any(skb);
+			multiframe->skb = NULL;
+			return;
+		}
+
+		req = container_of(dev->tx_reqs.next, struct usb_request, list);
+		list_del(&req->list);
+
+		/* temporarily stop TX queue when the freelist empties */
+		if (list_empty(&dev->tx_reqs))
+			netif_stop_queue(net);
+		spin_unlock_irqrestore(&dev->req_lock, flags);
+
+		/* no buffer copies needed, unless the network stack did it
+		 * or the hardware can't use skb buffers.
+		 * or there's not enough space for extra headers we need
+		 */
+
+		if (nr_frag != 1) {
+			for (i = 0; i < nr_frag; i++) {
+				frag = &skb_shinfo(skb)->frags[i];
+				#if RNDIS_FRAME_BYTE_ALIGMENT > 0
+				align_off[i] = RNDIS_FRAME_BYTE_ALIGMENT -
+					((frag->size + sizeof(struct rndis_packet_msg_type)) %
+					RNDIS_FRAME_BYTE_ALIGMENT);
+
+				if ((align_off[i] ==
+					RNDIS_FRAME_BYTE_ALIGMENT) ||
+					(i == nr_frag - 1))
+					align_off[i] = 0;
+
+				#else
+				align_off[i] = 0;
+				#endif
+
+				total_length += frag->size + sizeof(struct rndis_packet_msg_type) + align_off[i];
+			}
+			req->buf = kmalloc(total_length, GFP_ATOMIC);
+
+			if (unlikely(!req->buf)) {
+
+				for (i = 0; i < nr_frag; i++) {
+					if (multiframe->rndis_frame[i])
+						dev_kfree_skb_any(
+						multiframe->rndis_frame[i]);
+					else
+						ERROR(dev,
+						"error no skb to free\n");
+				}
+
+				dev->net->stats.tx_dropped += nr_frag;
+				dev_kfree_skb_any(skb);
+				ERROR(dev, "failed to kmalloc req->buf\n");
+				multiframe->skb = NULL;
+				printk(KERN_DEBUG "DEBUG, allocation failed \n");
+				spin_lock_irqsave(&dev->req_lock, flags);
+				list_add(&req->list, &dev->tx_reqs);
+				spin_unlock_irqrestore(&dev->req_lock, flags);
+				return;
+			}
+
+			length = total_length;
+		} else {
+
+			align_off[0] = 0;
+			req->buf = kmalloc((skb->data_len + sizeof(struct rndis_packet_msg_type)), GFP_ATOMIC );
+
+			if (unlikely(!req->buf)) {
+
+				for (i = 0; i < nr_frag; i++) {
+					if (multiframe->rndis_frame[i])
+						dev_kfree_skb_any(
+						multiframe->rndis_frame[i]);
+					else
+						ERROR(dev,
+						"error no skb to free\n");
+				}
+
+				dev->net->stats.tx_dropped += nr_frag;
+				dev_kfree_skb_any(skb);
+				ERROR(dev, "failed to kmalloc req->buf\n");
+				multiframe->skb = NULL;
+				printk(KERN_DEBUG "DEBUG, allocation failed \n");
+				spin_lock_irqsave(&dev->req_lock, flags);
+				list_add(&req->list, &dev->tx_reqs);
+				spin_unlock_irqrestore(&dev->req_lock, flags);
+				return;
+			}
+			length = skb->data_len + sizeof(struct rndis_packet_msg_type);
+		}
+
+		for (i = 0; i < nr_frag; i++) {
+			u8 *vaddr;
+
+			frag = &skb_shinfo(skb)->frags[i];
+			rndis_header =
+				(void *) ((u8 *)req->buf+data_copied);
+			memset(rndis_header, 0, sizeof *rndis_header);
+			rndis_header->MessageType = cpu_to_le32(REMOTE_NDIS_PACKET_MSG);
+			rndis_header->MessageLength = cpu_to_le32(frag->size + align_off[i] + sizeof *rndis_header);
+			rndis_header->DataOffset = cpu_to_le32(36);
+			rndis_header->DataLength = cpu_to_le32(frag->size);
+			data_copied +=  sizeof *rndis_header;
+			vaddr = kmap_atomic(skb_frag_page(frag));
+			memcpy((void *)((u8 *)req->buf+data_copied),
+				(void *)(u8 *)(vaddr+frag->page_offset),
+				frag->size);
+			kunmap_atomic(vaddr);
+			data_copied +=  frag->size + align_off[i];
+		}
+
+		skb_walk_frags(skb, frag_iter)
+			ERROR(dev, "prkl, nested frags\n");
+
+		req->context = skb;
+		req->complete = tx_complete;
+
+		/* NCM requires no zlp if transfer is dwNtbInMaxSize */
+		if (dev->port_usb->is_fixed &&
+			length == dev->port_usb->fixed_in_len &&
+			(length % in->maxpacket) == 0)
+			req->zero = 0;
+		else
+			req->zero = 1;
+
+		/* use zlp framing on tx for strict CDC-Ether conformance,
+		* though any robust network rx path ignores extra padding.
+		* and some hardware doesn't like to write zlps.
+		*/
+		if (req->zero && !dev->zlp && (length % in->maxpacket) == 0)
+			length++;
+
+		req->length = length;
+
+
+		/* throttle highspeed IRQ rate back slightly */
+		if (gadget_is_dualspeed(dev->gadget))
+			req->no_interrupt =
+				(dev->gadget->speed == USB_SPEED_HIGH)
 			? ((atomic_read(&dev->tx_qlen) % qmult) != 0)
 			: 0;
 
-	retval = usb_ep_queue(in, req, GFP_ATOMIC);
-	switch (retval) {
-	default:
-		DBG(dev, "tx queue err %d\n", retval);
-		break;
-	case 0:
-		net->trans_start = jiffies;
-		atomic_inc(&dev->tx_qlen);
-	}
+		retval = usb_ep_queue(in, req, GFP_ATOMIC);
 
-	if (retval) {
-		dev_kfree_skb_any(skb);
-drop:
-		dev->net->stats.tx_dropped++;
-		spin_lock_irqsave(&dev->req_lock, flags);
-		if (list_empty(&dev->tx_reqs))
-			netif_start_queue(net);
-		list_add(&req->list, &dev->tx_reqs);
-		spin_unlock_irqrestore(&dev->req_lock, flags);
+
+		for (i = 0; i < nr_frag; i++) {
+			if (multiframe->rndis_frame[i])
+				dev_kfree_skb_any(multiframe->rndis_frame[i]);
+			else
+				ERROR(dev, "error no skb to free\n");
+		}
+
+		multiframe->skb = NULL;
+
+		switch (retval) {
+		default:
+			DBG(dev, "tx queue err %d\n", retval);
+		break;
+		case 0:
+			net->trans_start = jiffies;
+			atomic_inc(&dev->tx_qlen);
+		}
+
+		if (retval) {
+
+			if (req->buf != skb->data)
+				kfree(req->buf);
+
+			  dev_kfree_skb_any(skb);
+			dev->net->stats.tx_dropped += nr_frag;
+			spin_lock_irqsave(&dev->req_lock, flags);
+			if (list_empty(&dev->tx_reqs))
+				netif_start_queue(net);
+			list_add(&req->list, &dev->tx_reqs);
+			spin_unlock_irqrestore(&dev->req_lock, flags);
+		}
 	}
-	return NETDEV_TX_OK;
 }
 
 /*-------------------------------------------------------------------------*/
@@ -735,7 +994,7 @@ static const struct net_device_ops eth_netdev_ops = {
 	.ndo_stop		= eth_stop,
 	.ndo_start_xmit		= eth_start_xmit,
 	.ndo_change_mtu		= ueth_change_mtu,
-	.ndo_set_mac_address 	= eth_mac_addr,
+	.ndo_set_mac_address	= eth_mac_addr,
 	.ndo_validate_addr	= eth_validate_addr,
 };
 
@@ -758,9 +1017,30 @@ static struct device_type gadget_type = {
  */
 int gether_setup(struct usb_gadget *g, u8 ethaddr[ETH_ALEN])
 {
+	return gether_setup_name(g, ethaddr, "usb");
+}
+
+/**
+ * gether_setup_name - initialize one ethernet-over-usb link
+ * @g: gadget to associated with these links
+ * @ethaddr: NULL, or a buffer in which the ethernet address of the
+ *	host side of the link is recorded
+ * @netname: name for network device (for example, "usb")
+ * Context: may sleep
+ *
+ * This sets up the single network link that may be exported by a
+ * gadget driver using this framework.  The link layer addresses are
+ * set up using module parameters.
+ *
+ * Returns negative errno, or zero on success
+ */
+int gether_setup_name(struct usb_gadget *g, u8 ethaddr[ETH_ALEN],
+		const char *netname)
+{
 	struct eth_dev		*dev;
 	struct net_device	*net;
 	int			status;
+	struct rndis_multiframe *multiframe = &multiframe_struct;
 
 	if (the_dev)
 		return -EBUSY;
@@ -772,6 +1052,12 @@ int gether_setup(struct usb_gadget *g, u8 ethaddr[ETH_ALEN])
 	dev = netdev_priv(net);
 	spin_lock_init(&dev->lock);
 	spin_lock_init(&dev->req_lock);
+
+	hrtimer_init(&multiframe->tx_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+	multiframe->tx_timer.function =
+			&multiframe_timer_timeout;
+	tasklet_init(&multiframe->taskl, multiframe_timer_timeout_tasklet, (unsigned long)multiframe);
+
 	INIT_WORK(&dev->work, eth_work);
 	INIT_LIST_HEAD(&dev->tx_reqs);
 	INIT_LIST_HEAD(&dev->rx_reqs);
@@ -780,7 +1066,7 @@ int gether_setup(struct usb_gadget *g, u8 ethaddr[ETH_ALEN])
 
 	/* network device setup */
 	dev->net = net;
-	strcpy(net->name, "usb%d");
+	snprintf(net->name, sizeof(net->name), "%s%%d", netname);
 
 	if (get_ether_addr(dev_addr, net->dev_addr))
 		dev_warn(&g->dev,
@@ -935,14 +1221,18 @@ void gether_disconnect(struct gether *link)
 {
 	struct eth_dev		*dev = link->ioport;
 	struct usb_request	*req;
-
-	WARN_ON(!dev);
+	struct rndis_multiframe *multiframe = &multiframe_struct;
+	int i;
 	if (!dev)
 		return;
 
 	DBG(dev, "%s\n", __func__);
-
 	netif_stop_queue(dev->net);
+
+	if (hrtimer_active(&multiframe->tx_timer))
+		hrtimer_cancel(&multiframe->tx_timer);
+
+	tasklet_kill(&multiframe->taskl);
 	netif_carrier_off(dev->net);
 
 	/* disable endpoints, forcing (synchronous) completion
@@ -960,6 +1250,18 @@ void gether_disconnect(struct gether *link)
 		usb_ep_free_request(link->in_ep, req);
 		spin_lock(&dev->req_lock);
 	}
+        if (multiframe->skb) {
+                for (i = 0; i < skb_shinfo(multiframe->skb)->nr_frags; i++) {
+                           if (multiframe->rndis_frame[i])
+                                    dev_kfree_skb_any(multiframe->rndis_frame[i]);
+                           else
+                                    ERROR(dev, "error no skb to free\n");
+                }
+                dev_kfree_skb_any(multiframe->skb);
+                multiframe->skb = NULL;
+                }
+
+
 	spin_unlock(&dev->req_lock);
 	link->in_ep->driver_data = NULL;
 	link->in_ep->desc = NULL;

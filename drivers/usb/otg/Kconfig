@@ -12,6 +12,14 @@ config USB_OTG_UTILS
 	  Select this to make sure the build includes objects from
 	  the OTG infrastructure directory.
 
+config USB_OTG_WAKELOCK
+	bool "Hold a wakelock when USB connected"
+	depends on WAKELOCK
+	select USB_OTG_UTILS
+	help
+	  Select this to automatically hold a wakelock when USB is
+	  connected, preventing suspend.
+
 if USB || USB_GADGET
 
 #
@@ -26,6 +34,14 @@ config USB_GPIO_VBUS
 	  internal transceiver via the usb_phy interface, and
 	  optionally control of a D+ pullup GPIO as well as a VBUS
 	  current limit regulator.
+
+config USB_USBHS_VBUS
+	bool "Renesas SH/R-Mobile peripheral-only VBUS sensing 'transceiver'"
+	depends on ARCH_SHMOBILE && USB_R8A66597
+	select USB_OTG_UTILS
+	help
+	  Provides VBUS sensing function for Renesas SH/R-Mobile devices
+	  with an internal transceiver via the otg_transceiver interface.
 
 config ISP1301_OMAP
 	tristate "Philips ISP1301 with OMAP OTG"
@@ -127,5 +143,13 @@ config USB_MV_OTG
 	  implements role switch between EHCI host driver and gadget driver.
 
 	  To compile this driver as a module, choose M here.
+
+config EOS2_USB2_OTG
+	bool "EOS2 USB OTG Driver"
+	depends on  USB_R8A66597_HCD && USB_R8A66597
+	select USB_OTG
+	select USB_OTG_UTILS
+	help
+	  Enable this to support EOS2 USB OTG Driver.
 
 endif # USB || OTG

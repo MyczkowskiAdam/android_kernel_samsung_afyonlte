@@ -167,10 +167,17 @@ static void lcd_device_release(struct device *dev)
 	kfree(ld);
 }
 
+
+static ssize_t show_lcd_info(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    return sprintf(buf, "%s","INH_GH96-06571A\n" );
+}
+
 static struct device_attribute lcd_device_attributes[] = {
 	__ATTR(lcd_power, 0644, lcd_show_power, lcd_store_power),
 	__ATTR(contrast, 0644, lcd_show_contrast, lcd_store_contrast),
 	__ATTR(max_contrast, 0444, lcd_show_max_contrast, NULL),
+	__ATTR(lcd_type, S_IRUGO, show_lcd_info, NULL),	
 	__ATTR_NULL,
 };
 

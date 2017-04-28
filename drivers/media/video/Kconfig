@@ -969,6 +969,75 @@ config SOC_CAMERA_IMX074
 	help
 	  This driver supports IMX074 cameras from Sony
 
+config SOC_CAMERA_S5K4ECGX
+	tristate "s5k4ecgx support"
+	depends on SOC_CAMERA && I2C
+	help
+	  This driver supports S5K4ECGX cameras from Samsung
+
+config SOC_CAMERA_S5K4ECGX_TUNING
+	tristate "s5k4ecgx tuning support"
+	depends on SOC_CAMERA_S5K4ECGX && I2C
+	help
+	  This driver supports S5K4ECGX tuning cameras from Samsung
+
+config SOC_CAMERA_SR030PC50
+	tristate "sr030pc50 support"
+	depends on SOC_CAMERA && I2C
+	help
+	  This driver supports SR030PC50 cameras from siliconfile
+
+config SOC_CAMERA_SR030PC50_TUNING
+	tristate "sr030pc50 tuning support"
+	depends on SOC_CAMERA_SR030PC50 && I2C
+	help
+	  This driver supports SR030PC50 tuning cameras from Samsung
+
+config SOC_CAMERA_SR200PC20M
+	tristate "sr200pc20m support"
+	depends on SOC_CAMERA && I2C
+	help
+	  This driver supports SR200PC20M cameras from Samsung
+
+config SOC_CAMERA_SR200PC20M_TUNING
+	tristate "sr200pc20m tuning support"
+	depends on SOC_CAMERA_SR200PC20M && I2C
+	help
+	  This driver supports SR200PC20M tuning cameras from Samsung
+
+config SOC_CAMERA_SR352
+	tristate "sr352 support"
+	depends on SOC_CAMERA && I2C
+	help
+	  This driver supports SR352 cameras from Samsung
+	  SR-352 is a 3M pixcel single chip CMOS image sensor
+	  for mobile phone camera applications and digital still
+	  camera products.
+
+config SOC_CAMERA_SR352_TUNING
+	tristate "sr352 tuning support"
+	depends on SOC_CAMERA_SR352 && I2C
+	help
+	  This driver supports SR352 tuning cameras from Samsung
+	  SR-352 is a 3M pixcel single chip CMOS image sensor
+	  for mobile phone camera applications and digital still
+	  camera products.
+
+config SOC_CAMERA_SR130PC20
+	tristate "sr130pc20 support"
+	depends on SOC_CAMERA && I2C
+	help
+	  This driver supports SR130PC20 cameras from siliconfile.
+	  SR130PC20 is a 1.3M pixcel single chip CMOS image sensor
+	  for mobile phone camera applications and digital still
+	  camera products.
+
+config SOC_CAMERA_SR130PC20_TUNING
+	tristate "sr130pc20 tuning support"
+	depends on SOC_CAMERA_SR130PC20 && I2C
+	help
+	  This driver supports SR130PC20 tuning cameras from Samsung
+
 config SOC_CAMERA_MT9M001
 	tristate "mt9m001 support"
 	depends on SOC_CAMERA && I2C
@@ -1099,6 +1168,13 @@ config VIDEO_SH_MOBILE_CEU
 	select VIDEOBUF2_DMA_CONTIG
 	---help---
 	  This is a v4l2 driver for the SuperH Mobile CEU Interface
+
+config VIDEO_SH_MOBILE_RCU
+	tristate "SuperH Mobile RCU Interface driver"
+	depends on VIDEO_DEV && SOC_CAMERA && HAS_DMA && HAVE_CLK
+	select VIDEOBUF2_DMA_CONTIG
+	---help---
+	  This is a v4l2 driver for the SuperH Mobile RCU Interface
 
 config VIDEO_OMAP1
 	tristate "OMAP1 Camera Interface driver"

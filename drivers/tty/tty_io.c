@@ -1996,10 +1996,11 @@ retry_open:
 	mutex_lock(&tty_mutex);
 	tty_lock();
 	spin_lock_irq(&current->sighand->siglock);
-	if (!noctty &&
+	/* To enable Ctrl+C in AT Mode on SSG */
+	/* if (!noctty &&
 	    current->signal->leader &&
 	    !current->signal->tty &&
-	    tty->session == NULL)
+	    tty->session == NULL) */
 		__proc_set_tty(current, tty);
 	spin_unlock_irq(&current->sighand->siglock);
 	tty_unlock();

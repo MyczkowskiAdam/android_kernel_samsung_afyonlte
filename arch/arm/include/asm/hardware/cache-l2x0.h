@@ -75,6 +75,7 @@
 #define L2X0_CACHE_ID_RTL_R2P0          0x4
 #define L2X0_CACHE_ID_RTL_R3P0          0x5
 #define L2X0_CACHE_ID_RTL_R3P1          0x6
+#define L2X0_CACHE_ID_RTL_R3P1_50REL0	0x7
 #define L2X0_CACHE_ID_RTL_R3P2          0x8
 
 #define L2X0_AUX_CTRL_MASK			0xc0000fff
@@ -102,8 +103,16 @@
 
 #define L2X0_ADDR_FILTER_EN		1
 
+#define L2X0_PREFETCH_CTRL_PREFETCH_DROP_SHIFT	24
+#define L2X0_PREFETCH_CTRL_DATA_PREFETCH_SHIFT	28
+#define L2X0_PREFETCH_CTRL_INSTR_PREFETCH_SHIFT	29
+#define L2X0_PREFETCH_CTRL_DOUBLE_LINEFILL_SHIFT 30
+
 #ifndef __ASSEMBLY__
 extern void __init l2x0_init(void __iomem *base, u32 aux_val, u32 aux_mask);
+#ifdef CONFIG_ARM_TZ
+extern void __init l2x0_init_later(void);
+#endif
 #if defined(CONFIG_CACHE_L2X0) && defined(CONFIG_OF)
 extern int l2x0_of_init(u32 aux_val, u32 aux_mask);
 #else
@@ -124,6 +133,7 @@ struct l2x0_regs {
 	unsigned long data_latency;
 	unsigned long filter_start;
 	unsigned long filter_end;
+	unsigned long debug_ctrl;
 	unsigned long prefetch_ctrl;
 	unsigned long pwr_ctrl;
 };

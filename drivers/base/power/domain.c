@@ -33,6 +33,7 @@
 	__ret;							\
 })
 
+#ifdef CONFIG_PM_RUNTIME_DOMAIN_GOVERNOR
 #define GENPD_DEV_TIMED_CALLBACK(genpd, type, callback, dev, field, name)	\
 ({										\
 	ktime_t __start = ktime_get();						\
@@ -46,6 +47,10 @@
 	}									\
 	__retval;								\
 })
+#else
+#define GENPD_DEV_TIMED_CALLBACK(genpd, type, callback, dev, field, name)	\
+	GENPD_DEV_CALLBACK(genpd, type, callback, dev);
+#endif
 
 static LIST_HEAD(gpd_list);
 static DEFINE_MUTEX(gpd_list_lock);
@@ -201,13 +206,16 @@ int __pm_genpd_poweron(struct generic_pm_domain *genpd)
 	}
 
 	if (genpd->power_on) {
+#ifdef CONFIG_PM_RUNTIME_DOMAIN_GOVERNOR
 		ktime_t time_start = ktime_get();
 		s64 elapsed_ns;
+#endif
 
 		ret = genpd->power_on(genpd);
 		if (ret)
 			goto err;
 
+#ifdef CONFIG_PM_RUNTIME_DOMAIN_GOVERNOR
 		elapsed_ns = ktime_to_ns(ktime_sub(ktime_get(), time_start));
 		if (elapsed_ns > genpd->power_on_latency_ns) {
 			genpd->power_on_latency_ns = elapsed_ns;
@@ -216,6 +224,7 @@ int __pm_genpd_poweron(struct generic_pm_domain *genpd)
 					"new value %lld ns\n", genpd->name,
 					elapsed_ns);
 		}
+#endif
 	}
 
 	genpd_set_active(genpd);
@@ -408,15 +417,19 @@ static int pm_genpd_poweroff(struct generic_pm_domain *genpd)
 	}
 
 	if (genpd->power_off) {
+#ifdef CONFIG_PM_RUNTIME_DOMAIN_GOVERNOR
 		ktime_t time_start;
 		s64 elapsed_ns;
+#endif
 
 		if (atomic_read(&genpd->sd_count) > 0) {
 			ret = -EBUSY;
 			goto out;
 		}
 
+#ifdef CONFIG_PM_RUNTIME_DOMAIN_GOVERNOR
 		time_start = ktime_get();
+#endif
 
 		/*
 		 * If sd_count > 0 at this point, one of the subdomains hasn't
@@ -432,6 +445,7 @@ static int pm_genpd_poweroff(struct generic_pm_domain *genpd)
 			goto out;
 		}
 
+#ifdef CONFIG_PM_RUNTIME_DOMAIN_GOVERNOR
 		elapsed_ns = ktime_to_ns(ktime_sub(ktime_get(), time_start));
 		if (elapsed_ns > genpd->power_off_latency_ns) {
 			genpd->power_off_latency_ns = elapsed_ns;
@@ -440,10 +454,13 @@ static int pm_genpd_poweroff(struct generic_pm_domain *genpd)
 					"new value %lld ns\n", genpd->name,
 					elapsed_ns);
 		}
+#endif
 	}
 
 	genpd->status = GPD_STATE_POWER_OFF;
+#ifdef CONFIG_PM_RUNTIME_DOMAIN_GOVERNOR
 	genpd->power_off_time = ktime_get();
+#endif
 
 	/* Update PM QoS information for devices in the domain. */
 	list_for_each_entry_reverse(pdd, &genpd->dev_list, list_node) {

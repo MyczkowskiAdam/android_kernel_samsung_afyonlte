@@ -451,6 +451,12 @@ config TOUCHSCREEN_TNETV107X
 	  To compile this driver as a module, choose M here: the
 	  module will be called tnetv107x-ts.
 
+config TOUCHSCREEN_SYNAPTICS_I2C_RMI
+	tristate "Synaptics i2c touchscreen"
+	depends on I2C
+	help
+	  This enables support for Synaptics RMI over I2C based touchscreens.
+
 config TOUCHSCREEN_TOUCHRIGHT
 	tristate "Touchright serial touchscreen"
 	select SERIO
@@ -844,5 +850,18 @@ config TOUCHSCREEN_TPS6507X
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called tps6507x_ts.
+
+
+
+source "drivers/input/touchscreen/imagis/Kconfig"
+source "drivers/input/touchscreen/melfas/Kconfig"
+source "drivers/input/touchscreen/zinitix/Kconfig"
+source "drivers/input/touchscreen/cyttsp4/Kconfig"
+
+config TOUCHSCREEN_IST30XX
+	tristate "Imagis IST30XX i2c touchscreen"
+	depends on I2C
+	help
+	  This enables support for Imagis IST30XX over I2C based touchscreen.
 
 endif

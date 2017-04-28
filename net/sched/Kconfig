@@ -1,6 +1,6 @@
 #
 # Traffic control configuration.
-# 
+#
 
 menuconfig NET_SCHED
 	bool "QoS and/or fair queueing"
@@ -126,6 +126,16 @@ config NET_SCH_RED
 	  To compile this code as a module, choose M here: the
 	  module will be called sch_red.
 
+config NET_SCH_MHI
+	tristate "Scheduler for Renesas MHI devices"
+	help
+	  Say Y here if you want to use Renesas MHI devices.
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called sch_mhi.
+
+	  If unsure, say N.
+
 config NET_SCH_SFB
 	tristate "Stochastic Fair Blue (SFB)"
 	---help---
@@ -215,6 +225,18 @@ config NET_SCH_DRR
 	  will be called sch_drr.
 
 	  If unsure, say N.
+
+config NET_SCH_MHI
+	tristate "Scheduler for Renesas MHI devices"
+	help
+	  Say Y here if you want to use Renesas MHI devices.
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called sch_mhi.
+
+	  If unsure, say N.
+
+
 
 config NET_SCH_MQPRIO
 	tristate "Multi-queue priority scheduler (MQPRIO)"
@@ -498,7 +520,7 @@ config NET_CLS_ACT
 
 config NET_ACT_POLICE
 	tristate "Traffic Policing"
-        depends on NET_CLS_ACT 
+        depends on NET_CLS_ACT
         ---help---
 	  Say Y here if you want to do traffic policing, i.e. strict
 	  bandwidth limiting. This action replaces the existing policing

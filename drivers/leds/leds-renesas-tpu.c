@@ -32,6 +32,7 @@
 #include <linux/slab.h>
 #include <linux/pm_runtime.h>
 #include <linux/workqueue.h>
+#include <linux/delay.h>
 
 enum r_tpu_pin { R_TPU_PIN_UNUSED, R_TPU_PIN_GPIO, R_TPU_PIN_GPIO_FN };
 enum r_tpu_timer { R_TPU_TIMER_UNUSED, R_TPU_TIMER_ON };
@@ -115,19 +116,15 @@ static int r_tpu_enable(struct r_tpu_priv *p, enum led_brightness brightness)
 	int k, ret;
 	unsigned long rate, tmp;
 
-	if (p->timer_state == R_TPU_TIMER_ON)
-		return 0;
-
-	/* wake up device and enable clock */
-	pm_runtime_get_sync(&p->pdev->dev);
-	ret = clk_enable(p->clk);
-	if (ret) {
-		dev_err(&p->pdev->dev, "cannot enable clock\n");
-		return ret;
+	if (p->timer_state != R_TPU_TIMER_ON) {
+		/* wake up device and enable clock */
+		pm_runtime_get_sync(&p->pdev->dev);
+		ret = clk_enable(p->clk);
+		if (ret) {
+			dev_err(&p->pdev->dev, "cannot enable clock\n");
+			return ret;
+		}
 	}
-
-	/* make sure channel is disabled */
-	r_tpu_start_stop_ch(p, 0);
 
 	/* get clock rate after enabling it */
 	rate = clk_get_rate(p->clk);
@@ -219,14 +216,18 @@ static void r_tpu_work(struct work_struct *work)
 	struct r_tpu_priv *p = container_of(work, struct r_tpu_priv, work);
 	enum led_brightness brightness = p->new_brightness;
 
-	r_tpu_disable(p);
-
 	/* off and maximum are handled as GPIO pins, in between PWM */
-	if ((brightness == 0) || (brightness == p->ldev.max_brightness))
+	if ((brightness == 0) || (brightness == p->ldev.max_brightness)) {
+		r_tpu_disable(p);
 		r_tpu_set_pin(p, R_TPU_PIN_GPIO, brightness);
-	else {
-		r_tpu_set_pin(p, R_TPU_PIN_GPIO_FN, 0);
+	} else {
 		r_tpu_enable(p, brightness);
+		/*
+		 * TODO: We need to wait for 1 msec to prevent backpanel
+		 * being disabled for a moment.  Needs investigation.
+		 */
+		msleep(1);
+		r_tpu_set_pin(p, R_TPU_PIN_GPIO_FN, 0);
 	}
 }
 
@@ -282,13 +283,14 @@ static int __devinit r_tpu_probe(struct platform_device *pdev)
 	p->pin_state = R_TPU_PIN_UNUSED;
 	p->timer_state = R_TPU_TIMER_UNUSED;
 	p->refresh_rate = cfg->refresh_rate ? cfg->refresh_rate : 100;
-	r_tpu_set_pin(p, R_TPU_PIN_GPIO, LED_OFF);
+	r_tpu_set_pin(p, R_TPU_PIN_GPIO,
+			cfg->init_brightness ? LED_FULL : LED_OFF);
 	platform_set_drvdata(pdev, p);
 
 	INIT_WORK(&p->work, r_tpu_work);
 
 	p->ldev.name = cfg->name;
-	p->ldev.brightness = LED_OFF;
+	p->ldev.brightness = cfg->init_brightness ? LED_FULL : LED_OFF;
 	p->ldev.max_brightness = cfg->max_brightness;
 	p->ldev.brightness_set = r_tpu_set_brightness;
 	p->ldev.flags |= LED_CORE_SUSPENDRESUME;

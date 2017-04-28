@@ -16,6 +16,7 @@
 #include <linux/mutex.h>
 #include <linux/gfp.h>
 #include <linux/suspend.h>
+#include <linux/cpumask.h>
 
 #ifdef CONFIG_SMP
 /* Serializes the updates to cpu_online_mask, cpu_present_mask */
@@ -43,6 +44,47 @@ static RAW_NOTIFIER_HEAD(cpu_chain);
 static int cpu_hotplug_disabled;
 
 #ifdef CONFIG_HOTPLUG_CPU
+
+#ifdef CONFIG_HOTPLUG_CPU_MGR
+static u32 hotplugcpu_mgr_clsts[NR_CPUS];
+DEFINE_MUTEX(hotplugcpu_mgr_mutex);
+
+int cpu_up_manager(unsigned int cpu, u32 cli)
+{
+	int ret;
+
+	BUG_ON(cpu >= num_possible_cpus());
+
+	mutex_lock(&hotplugcpu_mgr_mutex);
+
+	hotplugcpu_mgr_clsts[cpu] &= ~cli;
+	if (hotplugcpu_mgr_clsts[cpu])	{
+		mutex_unlock(&hotplugcpu_mgr_mutex);
+		return 0;
+	}
+
+	ret = cpu_up(cpu);
+
+	mutex_unlock(&hotplugcpu_mgr_mutex);
+	return ret;
+}
+
+int cpu_down_manager(unsigned int cpu, u32 cli)
+{
+	int ret;
+
+	BUG_ON(cpu >= num_possible_cpus());
+
+	mutex_lock(&hotplugcpu_mgr_mutex);
+
+	hotplugcpu_mgr_clsts[cpu] |= cli;
+	ret = cpu_down(cpu);
+
+	mutex_unlock(&hotplugcpu_mgr_mutex);
+	return ret;
+}
+EXPORT_SYMBOL(cpu_down_manager);
+#endif /*CONFIG_HOTPLUG_CPU_MGR*/
 
 static struct {
 	struct task_struct *active_writer;
@@ -286,7 +328,9 @@ out:
 	cpu_maps_update_done();
 	return err;
 }
+#ifndef CONFIG_HOTPLUG_CPU_MGR
 EXPORT_SYMBOL(cpu_down);
+#endif /*CONFIG_HOTPLUG_CPU_MGR*/
 #endif /*CONFIG_HOTPLUG_CPU*/
 
 /* Requires cpu_add_remove_lock to be held */
@@ -668,3 +712,23 @@ void init_cpu_online(const struct cpumask *src)
 {
 	cpumask_copy(to_cpumask(cpu_online_bits), src);
 }
+
+static ATOMIC_NOTIFIER_HEAD(idle_notifier);
+
+void idle_notifier_register(struct notifier_block *n)
+{
+	atomic_notifier_chain_register(&idle_notifier, n);
+}
+EXPORT_SYMBOL_GPL(idle_notifier_register);
+
+void idle_notifier_unregister(struct notifier_block *n)
+{
+	atomic_notifier_chain_unregister(&idle_notifier, n);
+}
+EXPORT_SYMBOL_GPL(idle_notifier_unregister);
+
+void idle_notifier_call_chain(unsigned long val)
+{
+	atomic_notifier_call_chain(&idle_notifier, val, NULL);
+}
+EXPORT_SYMBOL_GPL(idle_notifier_call_chain);

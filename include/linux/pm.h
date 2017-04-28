@@ -547,6 +547,9 @@ struct dev_pm_info {
 	ktime_t			suspend_time;
 	s64			max_time_suspended_ns;
 	struct dev_pm_qos_request *pq_req;
+#ifdef CONFIG_PDC
+	struct power_domain_info *pdi;
+#endif
 #endif
 	struct pm_subsys_data	*subsys_data;  /* Owned by the subsystem. */
 	struct pm_qos_constraints *constraints;

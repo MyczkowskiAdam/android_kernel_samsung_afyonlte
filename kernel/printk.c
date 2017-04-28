@@ -44,6 +44,9 @@
 
 #include <asm/uaccess.h>
 
+#if defined (CONFIG_SEC_DEBUG)
+#include <mach/sec_debug.h>
+#endif
 #define CREATE_TRACE_POINTS
 #include <trace/events/printk.h>
 
@@ -55,6 +58,10 @@ void asmlinkage __attribute__((weak)) early_printk(const char *fmt, ...)
 }
 
 #define __LOG_BUF_LEN	(1 << CONFIG_LOG_BUF_SHIFT)
+
+#ifdef        CONFIG_DEBUG_LL
+extern void printascii(char *);
+#endif
 
 /* printk's without a loglevel use this.. */
 #define DEFAULT_MESSAGE_LOGLEVEL CONFIG_DEFAULT_MESSAGE_LOGLEVEL
@@ -153,6 +160,20 @@ static int log_buf_len = __LOG_BUF_LEN;
 static unsigned logged_chars; /* Number of chars produced since last read+clear operation */
 static int saved_console_loglevel = -1;
 
+unsigned long log_buf_address;
+unsigned long log_buf_len_address;
+unsigned long log_end_address;
+unsigned long logged_chars_address;
+
+void crashlog_kmsg_init(void)
+{
+	log_buf_address =  __pa(&__log_buf[0]) ;
+	log_buf_len_address = __pa(&log_buf_len);
+	log_end_address = __pa(&log_end);
+	logged_chars_address = __pa(&logged_chars);
+}
+EXPORT_SYMBOL(crashlog_kmsg_init);
+
 #ifdef CONFIG_KEXEC
 /*
  * This appends the listed symbols to /proc/vmcoreinfo
@@ -195,9 +216,14 @@ void __init setup_log_buf(int early)
 	char *new_log_buf;
 	int free;
 
-	if (!new_log_buf_len)
+	if (!new_log_buf_len) {
+#if defined(CONFIG_SEC_DEBUG)
+		/* {{ Mark for GetLog */
+		sec_getlog_supply_kloginfo(__log_buf);
+		/* }} Mark for GetLog */
+#endif
 		return;
-
+}
 	if (early) {
 		unsigned long mem;
 
@@ -234,6 +260,12 @@ void __init setup_log_buf(int early)
 	con_start -= offset;
 	log_end -= offset;
 	raw_spin_unlock_irqrestore(&logbuf_lock, flags);
+
+#if defined(CONFIG_SEC_DEBUG)
+		/* {{ Mark for GetLog */
+		sec_getlog_supply_kloginfo(__log_buf);
+		/* }} Mark for GetLog */
+#endif
 
 	pr_info("log_buf_len: %d\n", log_buf_len);
 	pr_info("early log buf free: %d(%d%%)\n",
@@ -292,6 +324,53 @@ static inline void boot_delay_msec(void)
 {
 }
 #endif
+
+/*
+ * Return the number of unread characters in the log buffer.
+ */
+static int log_buf_get_len(void)
+{
+	return logged_chars;
+}
+
+/*
+ * Clears the ring-buffer
+ */
+void log_buf_clear(void)
+{
+	logged_chars = 0;
+}
+
+/*
+ * Copy a range of characters from the log buffer.
+ */
+int log_buf_copy(char *dest, int idx, int len)
+{
+	int ret, max;
+	bool took_lock = false;
+
+	if (!oops_in_progress) {
+		raw_spin_lock_irq(&logbuf_lock);
+		took_lock = true;
+	}
+
+	max = log_buf_get_len();
+	if (idx < 0 || idx >= max) {
+		ret = -1;
+	} else {
+		if (len > max - idx)
+			len = max - idx;
+		ret = len;
+		idx += (log_end - max);
+		while (len-- > 0)
+			dest[len] = LOG_BUF(idx + len);
+	}
+
+	if (took_lock)
+		raw_spin_unlock_irq(&logbuf_lock);
+
+	return ret;
+}
 
 #ifdef CONFIG_SECURITY_DMESG_RESTRICT
 int dmesg_restrict = 1;
@@ -638,8 +717,9 @@ static void call_console_drivers(unsigned start, unsigned end)
 	start_print = start;
 	while (cur_index != end) {
 		if (msg_level < 0 && ((end - cur_index) > 2)) {
-			/* strip log prefix */
-			cur_index += log_prefix(&LOG_BUF(cur_index), &msg_level, NULL);
+			/* strip log prefix : This changes has been made
+			keep the dmesg and console out to be same.*/
+			log_prefix(&LOG_BUF(cur_index), &msg_level, NULL);
 			start_print = cur_index;
 		}
 		while (cur_index != end) {
@@ -706,6 +786,20 @@ static bool printk_time = 1;
 static bool printk_time = 0;
 #endif
 module_param_named(time, printk_time, bool, S_IRUGO | S_IWUSR);
+
+#if defined(CONFIG_PRINTK_CPU_ID)
+static bool printk_cpu_id = 1;
+#else
+static bool printk_cpu_id = 0;
+#endif
+module_param_named(cpu, printk_cpu_id, bool, S_IRUGO | S_IWUSR);
+
+#if defined(CONFIG_PRINTK_PID)
+static bool printk_pid = 1;
+#else
+static bool printk_pid;
+#endif
+module_param_named(pid, printk_pid, bool, S_IRUGO | S_IWUSR);
 
 static bool always_kmsg_dump;
 module_param_named(always_kmsg_dump, always_kmsg_dump, bool, S_IRUGO | S_IWUSR);
@@ -884,6 +978,10 @@ asmlinkage int vprintk(const char *fmt, va_list args)
 	printed_len += vscnprintf(printk_buf + printed_len,
 				  sizeof(printk_buf) - printed_len, fmt, args);
 
+#ifdef	CONFIG_DEBUG_LL
+	printascii(printk_buf);
+#endif
+
 	p = printk_buf;
 
 	/* Read log level and handle special printk prefix */
@@ -917,15 +1015,23 @@ asmlinkage int vprintk(const char *fmt, va_list args)
 				/* Copy original log prefix */
 				int i;
 
-				for (i = 0; i < plen; i++)
+				/* add "<log_level>" part in log buffer */
+				for (i = 0; i < 3; i++)
 					emit_log_char(printk_buf[i]);
-				printed_len += plen;
+				/* addition of cpu id in the log buffer */
+				emit_log_char(this_cpu + '0');
+				/* add rest of the trace to log buffer*/
+				for (i = 3; i < plen; i++)
+					emit_log_char(printk_buf[i]);
+				/* update the printed len for cpu id */
+				printed_len += (plen + 1);
 			} else {
-				/* Add log prefix */
+				/* Add log prefix : "<loglevel>cpuid" */
 				emit_log_char('<');
 				emit_log_char(current_log_level + '0');
 				emit_log_char('>');
-				printed_len += 3;
+				emit_log_char(this_cpu + '0');
+				printed_len += 4;
 			}
 
 			if (printk_time) {
@@ -946,6 +1052,30 @@ asmlinkage int vprintk(const char *fmt, va_list args)
 				printed_len += tlen;
 			}
 
+			if (printk_cpu_id) {
+				/* Add the cpu id */
+				char tbuf[10], *tp;
+				unsigned tlen;
+
+				tlen = sprintf(tbuf, "c%u ", printk_cpu);
+
+				for (tp = tbuf; tp < tbuf + tlen; tp++)
+					emit_log_char(*tp);
+				printed_len += tlen;
+			}
+
+			if (printk_pid) {
+				/* Add the current process id */
+				char tbuf[10], *tp;
+				unsigned tlen;
+
+				tlen = sprintf(tbuf, "%6u ", current->pid);
+
+				for (tp = tbuf; tp < tbuf + tlen; tp++)
+					emit_log_char(*tp);
+				printed_len += tlen;
+			}
+
 			if (!*p)
 				break;
 		}
@@ -959,7 +1089,7 @@ asmlinkage int vprintk(const char *fmt, va_list args)
 	 * Try to acquire and then immediately release the
 	 * console semaphore. The release will do all the
 	 * actual magic (print out buffers, wake up klogd,
-	 * etc). 
+	 * etc).
 	 *
 	 * The console_trylock_for_printk() function
 	 * will release 'logbuf_lock' regardless of whether it
@@ -1161,7 +1291,6 @@ static int __cpuinit console_cpu_notify(struct notifier_block *self,
 	switch (action) {
 	case CPU_ONLINE:
 	case CPU_DEAD:
-	case CPU_DYING:
 	case CPU_DOWN_FAILED:
 	case CPU_UP_CANCELED:
 		console_lock();
@@ -1314,6 +1443,8 @@ again:
 	raw_spin_lock(&logbuf_lock);
 	if (con_start != log_end)
 		retry = 1;
+	else
+		retry = 0;
 	raw_spin_unlock_irqrestore(&logbuf_lock, flags);
 
 	if (retry && console_trylock())

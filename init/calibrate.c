@@ -3,7 +3,6 @@
  * Excised from init/main.c
  *  Copyright (C) 1991, 1992  Linus Torvalds
  */
-
 #include <linux/jiffies.h>
 #include <linux/delay.h>
 #include <linux/init.h>
@@ -11,6 +10,11 @@
 #include <linux/smp.h>
 #include <linux/percpu.h>
 
+#ifdef EOS_PF_BOGO_MIPS_FIX_REQUIRED
+#include <linux/clk.h>
+#include <linux/err.h>
+unsigned long lpj_zclk;
+#endif
 unsigned long lpj_fine;
 unsigned long preset_lpj;
 static int __init lpj_setup(char *str)
@@ -264,6 +268,9 @@ void __cpuinit calibrate_delay(void)
 	unsigned long lpj;
 	static bool printed;
 	int this_cpu = smp_processor_id();
+#ifdef EOS_PF_BOGO_MIPS_FIX_REQUIRED
+	struct clk *clk_z;
+#endif
 
 	if (per_cpu(cpu_loops_per_jiffy, this_cpu)) {
 		lpj = per_cpu(cpu_loops_per_jiffy, this_cpu);
@@ -279,6 +286,28 @@ void __cpuinit calibrate_delay(void)
 		lpj = lpj_fine;
 		pr_info("Calibrating delay loop (skipped), "
 			"value calculated using timer frequency.. ");
+#ifdef EOS_PF_BOGO_MIPS_FIX_REQUIRED
+	/*
+	 * Calculate loops per jiffy from "z_clk" to obtain
+	 * correct bogoMIPS value. This lpj_zclk will
+	 * be used only to calculate BogoMIPS value
+	*/
+
+	clk_z = clk_get(NULL, "z_clk");
+
+	if (!IS_ERR(clk_z)) {
+		lpj_zclk = clk_get_rate(clk_z) + HZ/2;
+		do_div(lpj_zclk, HZ);
+		clk_put(clk_z);
+		pr_cont("%lu.%02lu BogoMIPS (lpj_zclk=%lu)\n",
+	    lpj_zclk/(500000/HZ),
+	    (lpj_zclk/(5000/HZ)) % 100, lpj_zclk);
+		printed = true;
+	}else {
+		pr_info("z_clk error while calculating "
+			"BogoMIPS..\n ");
+	}
+#endif
 	} else if ((lpj = calibrate_delay_is_known())) {
 		;
 	} else if ((lpj = calibrate_delay_direct()) != 0) {

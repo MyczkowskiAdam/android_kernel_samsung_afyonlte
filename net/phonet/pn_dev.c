@@ -33,6 +33,7 @@
 #include <net/sock.h>
 #include <net/netns/generic.h>
 #include <net/phonet/pn_dev.h>
+#include <net/phonet/phonet.h>
 
 struct phonet_routes {
 	struct mutex		lock;
@@ -270,7 +271,7 @@ static void phonet_route_autodel(struct net_device *dev)
 	struct phonet_net *pnn = phonet_pernet(dev_net(dev));
 	unsigned i;
 	DECLARE_BITMAP(deleted, 64);
-
+	LIMIT_NETDEBUG(KERN_WARNING"phonet_route_autodel : %s\n", dev->name);
 	/* Remove left-over Phonet routes */
 	bitmap_zero(deleted, 64);
 	mutex_lock(&pnn->routes.lock);
@@ -298,7 +299,7 @@ static int phonet_device_notify(struct notifier_block *me, unsigned long what,
 
 	switch (what) {
 	case NETDEV_REGISTER:
-		if (dev->type == ARPHRD_PHONET)
+		if ((dev->type == ARPHRD_PHONET) || (dev->type == ARPHRD_MHI))
 			phonet_device_autoconf(dev);
 		break;
 	case NETDEV_UNREGISTER:
@@ -385,7 +386,7 @@ int phonet_route_del(struct net_device *dev, u8 daddr)
 {
 	struct phonet_net *pnn = phonet_pernet(dev_net(dev));
 	struct phonet_routes *routes = &pnn->routes;
-
+	LIMIT_NETDEBUG(KERN_WARNING"phonet_route_del : %s  addr %x\n", dev->name, daddr);
 	daddr = daddr >> 2;
 	mutex_lock(&routes->lock);
 	if (dev == routes->table[daddr])
@@ -425,7 +426,11 @@ struct net_device *phonet_route_output(struct net *net, u8 daddr)
 		dev_hold(dev);
 	rcu_read_unlock();
 
-	if (!dev)
-		dev = phonet_device_get(net); /* Default route */
+	if (!dev) {
+		/*avoid to send message on the deault route
+		 if no route fond skb is dropped */
+		/*dev = phonet_device_get(net); */ /* Default route */
+		LIMIT_NETDEBUG(KERN_ERR"phonet_route_output : no route found !!!\n");
+	}
 	return dev;
 }

@@ -181,9 +181,6 @@
 
 /*-------------------------------------------------------------------------*/
 
-struct usb_phy *otg_ulpi_create(struct usb_phy_io_ops *ops,
-					unsigned int flags);
-
 #ifdef CONFIG_USB_ULPI_VIEWPORT
 /* access ops for controllers with a viewport register */
 extern struct usb_phy_io_ops ulpi_viewport_access_ops;

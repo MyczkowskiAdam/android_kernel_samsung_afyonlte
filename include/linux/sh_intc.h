@@ -106,6 +106,8 @@ struct intc_hw_desc {
 	_INTC_ARRAY(sense_regs), _INTC_ARRAY(ack_regs),	\
 }
 
+struct irq_data;
+
 struct intc_desc {
 	char *name;
 	struct resource *resource;
@@ -114,6 +116,9 @@ struct intc_desc {
 	intc_enum force_disable;
 	bool skip_syscore_suspend;
 	struct intc_hw_desc hw;
+
+	int (*set_type)(struct irq_data *data, unsigned int flow_type);
+	int (*set_wake)(struct irq_data *data, unsigned int on);
 };
 
 #define DECLARE_INTC_DESC(symbol, chipname, vectors, groups,		\

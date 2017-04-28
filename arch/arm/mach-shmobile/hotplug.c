@@ -2,6 +2,7 @@
  * SMP support for R-Mobile / SH-Mobile
  *
  * Copyright (C) 2010  Magnus Damm
+ * Copyright (C) 2012 Renesas Mobile Corporation
  *
  * Based on realview, Copyright (C) 2002 ARM Ltd, All Rights Reserved
  *
@@ -14,41 +15,65 @@
 #include <linux/smp.h>
 #include <linux/cpumask.h>
 #include <linux/delay.h>
-#include <mach/common.h>
 #include <asm/cacheflush.h>
-
+#include <mach/common.h>
+#ifdef CONFIG_ARCH_R8A7373
+#ifdef CONFIG_SUSPEND
+#include <linux/suspend.h>
+#endif /* CONFIG_SUSPEND */
+#endif /* CONFIG_ARCH_R8A7373 */
+#include <mach/pm.h>
+#include <memlog/memlog.h>
 static cpumask_t dead_cpus;
-
 int platform_cpu_kill(unsigned int cpu)
 {
-	int k;
-
-	/* this function is running on another CPU than the offline target,
-	 * here we need wait for shutdown code in platform_cpu_die() to
-	 * finish before asking SoC-specific code to power off the CPU core.
+#ifndef CONFIG_ARCH_R8A7373
+	int cnt;
+	/* this will be executed on alive cpu,
+	 * and it must be executed after the victim has been finished
 	 */
-	for (k = 0; k < 1000; k++) {
+	for (cnt = 0; cnt < 1000; cnt++) {
 		if (cpumask_test_cpu(cpu, &dead_cpus))
 			return shmobile_platform_cpu_kill(cpu);
-
 		mdelay(1);
 	}
+#else
+	/* If PANIC is in progress, do NOT call shmobile_platform_cpu_kill(); */
+	u8 reg = __raw_readb(STBCHR2);
+	if (reg & APE_RESETLOG_PANIC_START)
+		return 1;
 
-	return 0;
+	return shmobile_platform_cpu_kill(cpu);
+#endif
+	return 1;
 }
 
 void platform_cpu_die(unsigned int cpu)
 {
+#ifdef CONFIG_ARCH_R8A7373
+	u8 reg;
+#endif /* CONFIG_ARCH_R8A7373 */
 	/* hardware shutdown code running on the CPU that is being offlined */
 	flush_cache_all();
 	dsb();
 
 	/* notify platform_cpu_kill() that hardware shutdown is finished */
 	cpumask_set_cpu(cpu, &dead_cpus);
+#ifdef CONFIG_ARCH_R8A7373
+	if (!shmobile_platform_cpu_die(cpu))
+		return;
+/* #ifdef CONFIG_SUSPEND */
+	/* If PANIC is in progress, do NOT call jump_systemsuspend(); */
+	reg = __raw_readb(STBCHR2);
+	if (reg & APE_RESETLOG_PANIC_START)
+		return;
 
-	/* wait for SoC code in platform_cpu_kill() to shut off CPU core
-	 * power. CPU bring up starts from the reset vector.
-	 */
+	memory_log_func(PM_FUNC_ID_JUMP_SYSTEMSUSPEND, 1);
+	jump_systemsuspend();
+	memory_log_func(PM_FUNC_ID_JUMP_SYSTEMSUSPEND, 0);
+	return;
+/* #endif *//* CONFIG_SUSPEND */
+#else  /* CONFIG_ARCH_R8A7373 */
 	while (1) {
 		/*
 		 * here's the WFI
@@ -58,6 +83,7 @@ void platform_cpu_die(unsigned int cpu)
 		    :
 		    : "memory", "cc");
 	}
+#endif /* CONFIG_ARCH_R8A7373 */
 }
 
 int platform_cpu_disable(unsigned int cpu)

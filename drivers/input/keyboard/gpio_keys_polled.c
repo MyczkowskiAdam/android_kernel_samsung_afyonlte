@@ -174,6 +174,8 @@ static int __devinit gpio_keys_polled_probe(struct platform_device *pdev)
 			goto err_free_gpio;
 		}
 
+		gpio_pull_up_port(button->gpio);
+
 		bdata->can_sleep = gpio_cansleep(gpio);
 		bdata->last_state = -1;
 		bdata->threshold = DIV_ROUND_UP(button->debounce_interval,

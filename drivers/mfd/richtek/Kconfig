@@ -1,0 +1,163 @@
+#
+# Richtek programmable micro USB switch drivers configuration
+#
+# Copyright (C) Richtek Corporation 2012
+# Patrick Chang <patrick_chang@richtek.com>
+
+config MFD_RT
+	bool "Ricktek Multifunction Device Drivers"
+
+	help
+	  Say Y here, and a list of miscellaneous MUS drivers will be displayed.
+	  Everything that didn't fit into the other categories is here. This option
+	  doesn't affect the kernel.
+
+	  If unsure, say Y.
+
+
+if MFD_RT
+menu "Richtek Multifunction Device Drivers"
+
+config RT_I2C_MUSC
+	bool "Use Richtek mUSB Switch Charger"
+	depends on (I2C&&GPIOLIB)
+
+choice
+depends on RT_I2C_MUSC
+prompt "MUS Charger Model"
+
+config RT8969
+	bool "RT8969"
+	---help---
+	RT8969
+config RT8973
+	bool "RT8973"
+	---help---
+	RT8973
+
+endchoice
+
+
+choice
+depends on RT8969
+prompt "Switch Control Mode"
+depends on RT_I2C_MUSC
+default RT8969_AUTO
+config RT8969_CM_AUTO
+	bool "Automatic"
+config RT8969_CM_MANUAL
+	bool "Manual"
+endchoice
+
+choice
+depends on RT8973
+prompt "Switch Control Mode"
+depends on RT_I2C_MUSC
+default RT8973_AUTO
+config RT8973_CM_AUTO
+	bool "Automatic"
+config RT8973_CM_MANUAL
+	bool "Manual"
+endchoice
+
+menu "RT8969 Setting"
+depends on RT8969
+source "drivers/mfd/richtek/RT8969Kconfig"
+endmenu #RT8969 Setting
+
+config RTMUSC_INT_CONFIG
+depends on RT_I2C_MUSC
+	bool "Configurate GPIO to be interrupt input pin"
+	default y
+
+config RTMUSC_INT_GPIO_NUMBER
+depends on (RT_I2C_MUSC&&GPIOLIB)
+	int "Used GPIO number"
+	default "161"
+	---help---
+	Decimal number (See schematic of mainboard and SoC datasheet)
+
+config RTMUSC_IRQ_NUMBER
+depends on RT_I2C_MUSC
+	int "IRQ number"
+	default "-1"
+	---help---
+	Corresponding IRQ number.
+	-1 means auto (use gpio_to_irq())
+
+config RT_I2C_SMC
+depends on (I2C&&GPIOLIB)
+    bool "Richtek Switch Mode Charger"
+    default y
+    ---help---
+    If unsure, choose y
+
+choice
+depends on RT_I2C_SMC
+prompt "Switch mode charger model"
+default RT9450
+config RT9450AC
+	bool "RT9450A/C"
+	---help---
+	RT9450A/C
+config RT9450B
+	bool "RT9450B"
+	---help---
+	RT9450B
+config RT9451
+	bool "RT9451"
+	---help---
+	RT9451
+config RT9452
+	bool "RT9452"
+	---help---
+	RT9452
+config RT9453
+	bool "RT9453"
+	---help---
+	RT9453
+endchoice
+
+if RT9450AC || RT9450B
+menu "RT9450 Setting"
+source "drivers/mfd/richtek/RT9450Kconfig"
+endmenu
+endif
+
+config RTSMC_INT_CONFIG
+depends on RT_I2C_SMC
+	bool "Configurate GPIO to be interrupt input pin"
+	default y
+
+config RTSMC_INT_GPIO_NUMBER
+depends on (RT_I2C_SMC&&GPIOLIB)
+	int "Used GPIO number"
+	default "161"
+	---help---
+	Decimal number (See schematic of mainboard and SoC datasheet)
+
+config RTSMC_IRQ_NUMBER
+depends on RT_I2C_SMC
+	int "IRQ number"
+	default "-1"
+	---help---
+	Corresponding IRQ number.
+	-1 means auto (use gpio_to_irq())
+
+
+config RT_SYSFS_DBG
+    bool "Enable Richtek Multifunction Device Driver Engineering Debug/Tuning Mode"
+    depends on MFD_RT
+    default y
+    ---help---
+    Provide serveral nodes to debug/tune performance or calbriate.
+    It will be mounted on /sys/devices/platform/rtmus/debug
+
+config RT_SHOW_INFO
+    bool "Show Debug Info"
+    default y
+    ---help---
+    For debug
+
+endmenu #Richtek MUS
+endif # RT_I2C_MUSC

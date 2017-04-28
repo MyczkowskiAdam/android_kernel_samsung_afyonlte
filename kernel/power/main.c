@@ -16,6 +16,10 @@
 #include <linux/debugfs.h>
 #include <linux/seq_file.h>
 
+#if defined (CONFIG_PM_DEBUG) && defined (CONFIG_ARCH_R8A7373)
+#include <mach/pm.h>
+#endif /*CONFIG_PM_DEBUG && CONFIG_ARCH_R8A7373*/
+
 #include "power.h"
 
 DEFINE_MUTEX(pm_mutex);
@@ -132,6 +136,7 @@ static ssize_t pm_test_store(struct kobject *kobj, struct kobj_attribute *attr,
 }
 
 power_attr(pm_test);
+
 #endif /* CONFIG_PM_DEBUG */
 
 #ifdef CONFIG_DEBUG_FS
@@ -273,7 +278,11 @@ static ssize_t state_store(struct kobject *kobj, struct kobj_attribute *attr,
 			   const char *buf, size_t n)
 {
 #ifdef CONFIG_SUSPEND
+#ifdef CONFIG_EARLYSUSPEND
+	suspend_state_t state = PM_SUSPEND_ON;
+#else
 	suspend_state_t state = PM_SUSPEND_STANDBY;
+#endif
 	const char * const *s;
 #endif
 	char *p;
@@ -290,10 +299,23 @@ static ssize_t state_store(struct kobject *kobj, struct kobj_attribute *attr,
 	}
 
 #ifdef CONFIG_SUSPEND
+#ifdef CONFIG_PM_DEBUG
+	if (is_systemsuspend_enable() == 0){
+		printk(KERN_INFO "\nSystem Suspend is not available at this moment\n\n");
+		return n;
+	}
+#endif	/* CONFIG_PM_DEBUG */
 	for (s = &pm_states[state]; state < PM_SUSPEND_MAX; s++, state++) {
 		if (*s && len == strlen(*s) && !strncmp(buf, *s, len)) {
+#ifdef CONFIG_EARLYSUSPEND
+			if (state == PM_SUSPEND_ON || valid_state(state)) {
+				error = 0;
+				request_suspend_state(state);
+				break;
+			}
+#else
 			error = pm_suspend(state);
-			break;
+#endif
 		}
 	}
 #endif
@@ -358,6 +380,147 @@ static ssize_t wakeup_count_store(struct kobject *kobj,
 power_attr(wakeup_count);
 #endif /* CONFIG_PM_SLEEP */
 
+
+#if defined (CONFIG_PM_DEBUG) && defined (CONFIG_ARCH_R8A7373)
+
+/*
+ * Enable PM modules (DFS, Suspend, Idle, PDC) at run-time
+ */
+typedef	int (*control_pm)(int);
+typedef	int (*is_pm_enable)(void);
+struct pm_modules {
+	char name[10];
+	control_pm ctl_cb;
+	is_pm_enable is_cb;
+};
+
+static struct pm_modules pm_modules_lst[] = {
+	{ /* DFS */
+	.name = "dfs", 
+	.ctl_cb = control_cpufreq, 
+	.is_cb = is_cpufreq_enable
+	},
+	{ /* Suspend */
+	.name = "suspend", 
+	.ctl_cb = control_systemsuspend, 
+	.is_cb = is_systemsuspend_enable
+	},
+	{ /* Idle */
+	.name = "idle", 
+	.ctl_cb = control_cpuidle, 
+	.is_cb = is_cpuidle_enable
+	},
+	{ /* PDC */
+	.name = "pdc", 
+	.ctl_cb = control_pdc, 
+	.is_cb = is_pdc_enable
+	},
+};
+
+static ssize_t enable_pm_show(struct kobject *kobj, struct kobj_attribute *attr,
+				char *buf)
+{
+	char *s = buf;
+	int count;
+	int i = 0;
+	int is_enable = 0;
+	count = sizeof(pm_modules_lst)/sizeof(struct pm_modules);
+
+	for (i = 0; i < count; i++){
+		is_enable = pm_modules_lst[i].is_cb();
+		if (is_enable){
+			s += sprintf(s, "%s\n", pm_modules_lst[i].name);
+		}
+	}
+
+	if (s != buf)
+		/* convert the last space to a newline */
+		*(s-1) = '\n';
+
+	return (s - buf);
+}
+
+static ssize_t enable_pm_store(struct kobject *kobj, struct kobj_attribute *attr,
+				const char *buf, size_t n)
+{
+	int count;
+	int i = 0;
+	int is_enable = 0;
+	char *p;
+	int len;
+	int error = -EINVAL;
+
+	count = sizeof(pm_modules_lst)/sizeof(struct pm_modules);
+	p = memchr(buf, '\n', n);
+	len = p ? p - buf : n;
+
+	for (i = 0; i < count; i++){
+		if (!strncmp(buf, pm_modules_lst[i].name, len)) {
+			is_enable = pm_modules_lst[i].is_cb();
+			if (!is_enable){
+				error = pm_modules_lst[i].ctl_cb(1);
+			}
+			break;
+		}
+	}
+	return error?error:n;
+}
+
+power_attr(enable_pm);
+
+static ssize_t disable_pm_show(struct kobject *kobj, struct kobj_attribute *attr,
+				char *buf)
+{
+	char *s = buf;
+	int count;
+	int i = 0;
+	int is_enable = 0;
+	count = sizeof(pm_modules_lst)/sizeof(struct pm_modules);
+
+	for (i = 0; i < count; i++){
+		is_enable = pm_modules_lst[i].is_cb();
+		if (!is_enable){
+			s += sprintf(s, "%s\n", pm_modules_lst[i].name);
+		}
+	}
+	if (s != buf)
+		/* convert the last space to a newline */
+		*(s-1) = '\n';
+
+	return (s - buf);
+}
+
+static ssize_t disable_pm_store(struct kobject *kobj, struct kobj_attribute *attr,
+				const char *buf, size_t n)
+{
+	int count;
+	int i = 0;
+	int is_enable = 0;
+	char *p;
+	int len;
+	int error = -EINVAL;
+
+	count = sizeof(pm_modules_lst)/sizeof(struct pm_modules);
+	p = memchr(buf, '\n', n);
+	len = p ? p - buf : n;
+
+	for (i = 0; i < count; i++){
+		if (!strncmp(buf, pm_modules_lst[i].name, len)) {
+			is_enable = pm_modules_lst[i].is_cb();
+			if (is_enable){
+				error = pm_modules_lst[i].ctl_cb(0);
+			}
+			break;
+		}
+	}
+	return error?error:n;
+}
+
+power_attr(disable_pm);
+
+#endif /*CONFIG_PM_DEBUG && CONFIG_ARCH_R8A7373*/
+
+
 #ifdef CONFIG_PM_TRACE
 int pm_trace_enabled;
 
@@ -400,6 +563,11 @@ power_attr(pm_trace_dev_match);
 
 #endif /* CONFIG_PM_TRACE */
 
+#ifdef CONFIG_USER_WAKELOCK
+power_attr(wake_lock);
+power_attr(wake_unlock);
+#endif
+
 static struct attribute * g[] = {
 	&state_attr.attr,
 #ifdef CONFIG_PM_TRACE
@@ -412,6 +580,14 @@ static struct attribute * g[] = {
 #ifdef CONFIG_PM_DEBUG
 	&pm_test_attr.attr,
 #endif
+#ifdef CONFIG_USER_WAKELOCK
+	&wake_lock_attr.attr,
+	&wake_unlock_attr.attr,
+#endif
+#endif
+#if defined (CONFIG_PM_DEBUG) && defined (CONFIG_ARCH_R8A7373)
+	&enable_pm_attr.attr,
+	&disable_pm_attr.attr,
 #endif
 	NULL,
 };
@@ -448,3 +624,4 @@ static int __init pm_init(void)
 }
 
 core_initcall(pm_init);
+

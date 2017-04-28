@@ -1,0 +1,788 @@
+/*
+ * d2153.h  --  D2153 ASoC driver
+ *
+ * Copyright (c) 2012 Dialog Semiconductor
+ *
+ * Author: Adam Thomson <Adam.Thomson@diasemi.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ */
+
+#ifndef _D2153_H
+#define _D2153_H
+
+#include <linux/i2c.h>
+#include <sound/soc.h>
+
+/* PMIC related includes */
+#include <linux/d2153/core.h>
+
+/* #define D2153_DEFAULT_SET_MICBIAS */
+
+/*
+ * D2153 register space
+ */
+
+/* Common1 Registers */
+#define D2153_CIF_CTRL			0x01
+#define D2153_SR			0x02
+#define D2153_PC_COUNT			0x03
+#define D2153_GAIN_RAMP_CTRL		0x04
+#define D2153_UNLOCK			0x05
+
+/* System Registers */
+#define D2153_SYSTEM_STATUS		0x08
+#define D2153_SYSTEM_MODES_CFG1		0x09
+#define D2153_SYSTEM_MODES_CFG2		0x0A
+#define D2153_SYSTEM_MODES_CFG3		0x0B
+
+/* ADC Filter Registers */
+#define D2153_ADC_FILTERS1		0x1C
+#define D2153_ADC_FILTERS2		0X1D
+#define D2153_ADC_FILTERS3		0X1E
+#define D2153_ADC_FILTERS4		0X1F
+
+/* DAC Filter Registers */
+#define D2153_DAC_FILTERS1		0x24
+#define D2153_DAC_FILTERS2		0x25
+#define D2153_DAC_FILTERS3		0x26
+#define D2153_DAC_FILTERS4		0x27
+#define D2153_DAC_FILTERS5		0x28
+
+/* ALC Registers */
+#define D2153_ALC_CTRL1			0x2C
+#define D2153_ALC_CTRL2			0x2D
+#define D2153_ALC_CTRL3			0x2E
+#define D2153_ALC_NOISE			0x2F
+#define D2153_ALC_TARGET_MIN		0x30
+#define D2153_ALC_TARGET_MAX		0x31
+#define D2153_ALC_GAIN_LIMITS		0x32
+#define D2153_ALC_ANA_GAIN_LIMITS	0x33
+#define D2153_ALC_ANTICLIP_CTRL		0x34
+#define D2153_ALC_ANTICLIP_LEVEL	0x35
+#define D2153_ALC_OFFSET_AUTO_M_L	0x36
+#define D2153_ALC_OFFSET_AUTO_U_L	0x37
+#define D2153_ALC_OFFSET_OP2L_L		0x38
+#define D2153_ALC_OFFSET_MAN_M_L	0x39
+#define D2153_ALC_OFFSET_MAN_U_L	0x3A
+#define D2153_ALC_OFFSET_AUTO_M_R	0x3B
+#define D2153_ALC_OFFSET_AUTO_U_R	0x3C
+#define D2153_ALC_OFFSET_OP2L_R		0x3D
+#define D2153_ALC_OFFSET_MAN_M_R	0x3E
+#define D2153_ALC_OFFSET_MAN_U_R	0x3F
+#define D2153_ALC_CIC_OP_LVL_CTRL	0x40
+#define D2153_ALC_CIC_OP_LVL_DATA	0x41
+
+/* Router Registers */
+#define D2153_DIG_ROUTING_AIF		0x44
+#define D2153_DIG_ROUTING_DAC		0x45
+#define D2153_DIG_CTRL			0x46
+
+/* AIF Registers */
+#define D2153_AIF_CTRL			0x48
+#define D2153_AIF_OFFSET		0x49
+#define D2153_AIF_CLK_MODE		0x4A
+
+/* PLL Registers */
+#define D2153_PLL_CTRL			0x4C
+#define D2153_PLL_FRAC_TOP		0x4D
+#define D2153_PLL_FRAC_BOT		0x4E
+#define D2153_PLL_INTEGER		0x4F
+#define D2153_PLL_STATUS		0x50
+
+/* DAC Noisegate Registers */
+#define D2153_DAC_NG_CTRL		0x54
+#define D2153_DAC_NG_SETUP_TIME		0x55
+#define D2153_DAC_NG_OFF_THRESHOLD	0x56
+#define D2153_DAC_NG_ON_THRESHOLD	0x57
+
+/* Beep Gen Registers */
+#define D2153_BEEP_GENERATOR1		0xE8
+#define D2153_BEEP_GENERATOR2		0xE9
+#define D2153_BEEP_GENERATOR3		0xEA
+#define D2153_BEEP_GENERATOR4		0xEB
+#define D2153_BEEP_GENERATOR5		0xEC
+
+/* Charge Pump Registers */
+#define D2153_CP_CTRL			0x5C
+#define D2153_CP_DELAY			0x5D
+#define D2153_CP_DETECTOR		0x5E
+#define D2153_CP_VOL_THRESHOLD1		0x5F
+
+/* DMIC Registers */
+#define D2153_MIC_CONFIG		0x68
+
+/* Common2 Registers */
+#define D2153_PAGE1			0x80
+#define D2153_CHIP_ID1			0x81
+#define D2153_CHIP_ID2			0x82
+#define D2153_CHIP_REVISION		0x83
+#define D2153_SPARE1			0x84
+#define D2153_STATUS1			0x85
+
+/* Limiter Registers */
+#define D2153_LIMITER_CTRL1		0x88
+#define D2153_LIMITER_CTRL2		0x89
+#define D2153_LIMITER_PWR_LIM		0x8A
+#define D2153_LIMITER_THD_LIM		0x8B
+#define D2153_NG_CTRL1			0x8C
+#define D2153_NG_CTRL2			0x8D
+
+/* Analogue Registers */
+
+/* AUX */
+#define D2153_AUX_L_CTRL		0x90
+#define D2153_AUX_L_GAIN		0x91
+#define D2153_AUX_L_GAIN_STATUS		0x92
+#define D2153_AUX_R_CTRL		0x93
+#define D2153_AUX_R_GAIN		0x94
+#define D2153_AUX_R_GAIN_STATUS		0x95
+
+/* MIC */
+#define D2153_MIC_L_CTRL		0x98
+#define D2153_MIC_L_GAIN		0x99
+#define D2153_MIC_L_GAIN_STATUS		0x9A
+#define D2153_MIC_R_CTRL		0x9B
+#define D2153_MIC_R_GAIN		0x9C
+#define D2153_MIC_R_GAIN_STATUS		0x9D
+#define D2153_MIC_EXT_CTRL		0x9E
+#define D2153_MIC_EXT_GAIN		0x9F
+#define D2153_MIC_EXT_GAIN_STATUS	0xA0
+#define D2153_MICBIAS1_CTRL		0xA1
+#define D2153_MICBIAS2_CTRL		0xA2
+#define D2153_MICBIAS3_CTRL		0xA3
+
+/* MIXIN */
+#define D2153_MIXIN_L_CTRL		0xA8
+#define D2153_MIXIN_L_GAIN		0xA9
+#define D2153_MIXIN_L_GAIN_STATUS	0xAA
+#define D2153_MIXIN_L_SELECT		0xAB
+#define D2153_MIXIN_R_CTRL		0xAC
+#define D2153_MIXIN_R_GAIN		0xAD
+#define D2153_MIXIN_R_GAIN_STATUS	0xAE
+#define D2153_MIXIN_R_SELECT		0xAF
+
+/* ADC */
+#define D2153_ADC_L_CTRL		0xB4
+#define D2153_ADC_L_GAIN		0xB5
+#define D2153_ADC_L_GAIN_STATUS		0xB6
+#define D2153_ADC_R_CTRL		0xB8
+#define D2153_ADC_R_GAIN		0xB9
+#define D2153_ADC_R_GAIN_STATUS		0xBA
+
+/* DAC */
+#define D2153_DAC_L_CTRL		0xBC
+#define D2153_DAC_L_GAIN		0xBD
+#define D2153_DAC_L_GAIN_STATUS		0xBE
+#define D2153_DAC_R_CTRL		0xBF
+#define D2153_DAC_R_GAIN		0xC0
+#define D2153_DAC_R_GAIN_STATUS		0xC1
+
+/* Mixout */
+#define D2153_MIXOUT_L_CTRL		0xC4
+#define D2153_MIXOUT_L_SELECT		0xC5
+#define D2153_MIXOUT_R_CTRL		0xC6
+#define D2153_MIXOUT_R_SELECT		0xC7
+#define D2153_MIXOUT_SP_CTRL		0xC8
+#define D2153_MIXOUT_SP_SELECT		0xC9
+
+/* HP */
+#define D2153_HP_L_CTRL			0xCC
+#define D2153_HP_L_GAIN			0xCD
+#define D2153_HP_L_GAIN_STATUS		0xCE
+#define D2153_HP_R_CTRL			0xCF
+#define D2153_HP_R_GAIN			0xD0
+#define D2153_HP_R_GAIN_STATUS		0xD1
+#define D2153_HP_TEST			0xD2
+
+/* EP */
+#define D2153_EP_CTRL			0xD4
+#define D2153_EP_GAIN			0xD5
+#define D2153_EP_GAIN_STATUS		0xD6
+
+/* SP */
+#define D2153_SP_CTRL			0xD8
+#define D2153_SP_GAIN			0xD9
+#define D2153_SP_GAIN_STATUS		0xDA
+#define D2153_SP_CFG1			0xDB
+#define D2153_SP_CFG2			0xDC
+#define D2153_SP_STATUS			0xDE
+
+/* Misc */
+#define D2153_REFERENCES		0xE4
+#define D2153_IO_CTRL			0xE5
+#define D2153_LDO_CTRL			0xE6
+
+/* Misc System Controller Registers */
+#define D2153_PATCH_UNLOCK		0xF0
+#define D2153_PATCH1_CTRL		0xF1
+#define D2153_PATCH1_ADDR		0xF2
+#define D2153_PATCH1_DATA		0xF3
+#define D2153_PATCH2_CTRL		0xF4
+#define D2153_PATCH2_ADDR		0xF5
+#define D2153_PATCH2_DATA		0xF6
+#define D2153_PATCH3_CTRL		0xF7
+#define D2153_PATCH3_ADDR		0xF8
+#define D2153_PATCH3_DATA		0xF9
+#define D2153_PATCH4_CTRL		0xFA
+#define D2153_PATCH4_ADDR		0xFB
+#define D2153_PATCH4_DATA		0xFC
+#define D2153_PATCH5_CTRL		0xFD
+#define D2153_PATCH5_ADDR		0xFE
+#define D2153_PATCH5_DATA		0xFF
+
+#define D2153_MAX_REG			D2153_PATCH5_DATA
+
+
+/*
+ * Bit fields
+ */
+
+/* D2153_SR = 0x02 */
+#define D2153_SR_8000					(0x1 << 0)
+#define D2153_SR_11025					(0x2 << 0)
+#define D2153_SR_12000					(0x3 << 0)
+#define D2153_SR_16000					(0x5 << 0)
+#define D2153_SR_22050					(0x6 << 0)
+#define D2153_SR_24000					(0x7 << 0)
+#define D2153_SR_32000					(0x9 << 0)
+#define D2153_SR_44100					(0xA << 0)
+#define D2153_SR_48000					(0xB << 0)
+#define D2153_SR_88200					(0xE << 0)
+#define D2153_SR_96000					(0xF << 0)
+
+/* D2153_GAIN_RAMP_CTRL = 0x04 */
+#define D2153_GAIN_RAMP_RATE_SHIFT			0
+#define D2153_GAIN_RAMP_RATE_MAX			0x4
+
+/* D2153_ADC/DAC_FILTERS1 = 0x1C/0x24 */
+#define D2153_VOICE_HPF_CORNER_SHIFT			0
+#define D2153_VOICE_HPF_CORNER_MAX			0x8
+#define D2153_VOICE_EN_SHIFT				3
+#define D2153_VOICE_EN_MAX				0x1
+#define D2153_AUDIO_HPF_CORNER_SHIFT			4
+#define D2153_AUDIO_HPF_CORNER_MAX			0x4
+#define D2153_HPF_EN_SHIFT				7
+#define D2153_HPF_EN_MAX				0x1
+
+/* D2153_ADC/DAC_FILTERS2 = 0x1D/0x25  */
+#define D2153_EQ_BAND1_SHIFT				0
+#define D2153_EQ_BAND1_MAX				0xF
+#define D2153_EQ_BAND2_SHIFT				4
+#define D2153_EQ_BAND2_MAX				0xF
+
+/* D2153_ADC/DAC_FILTERS3 = 0x1E/0x26 */
+#define D2153_EQ_BAND3_SHIFT				0
+#define D2153_EQ_BAND3_MAX				0xF
+#define D2153_EQ_BAND4_SHIFT				4
+#define D2153_EQ_BAND4_MAX				0xF
+
+/* D2153_ADC/DAC_FILTERS4 = 0x1F/0x27 */
+#define D2153_EQ_BAND5_SHIFT				0
+#define D2153_EQ_BAND5_MAX				0xF
+#define D2153_EQ_EN_SHIFT				7
+#define D2153_EQ_EN_MAX					0x1
+
+/* D2153_ADC_FILTERS4 = 0x1F */
+#define D2153_ADC_EQ_GAIN_SHIFT				4
+#define D2153_ADC_EQ_GAIN_MAX				0x3
+
+/* D2153_DAC_FILTERS5 = 0x28 */
+#define D2153_DAC_SOFTMUTE_RATE_SHIFT			4
+#define D2153_DAC_SOFTMUTE_RATE_MAX			7
+#define D2153_DAC_SOFTMUTE_EN				(1 << 7)
+#define D2153_DAC_SOFTMUTE_EN_SHIFT			7
+#define D2153_DAC_SOFTMUTE_EN_MAX			0x1
+
+/* D2153_ALC_CTRL1 = 0x2C */
+#define D2153_ALC_OFFSET_EN				(1 << 0)
+#define D2153_ALC_SYNC_MODE				(1 << 1)
+#define D2153_ALC_CALIB_MODE_MAN			(1 << 2)
+#define D2153_ALC_L_EN_SHIFT				3
+#define D2153_ALC_L_EN					(1 << 3)
+#define D2153_ALC_AUTO_CALIB_EN				(1 << 4)
+#define D2153_ALC_CALIB_OVERFLOW			(1 << 5)
+#define D2153_ALC_EXT_MIC_MODE_SHIFT			6
+#define D2153_ALC_EXT_MIC_MODE_MAX			2
+#define D2153_ALC_R_EN_SHIFT				7
+#define D2153_ALC_R_EN					(1 << 7)
+#define D2153_ALC_EN_MAX				0x1
+
+/* D2153_ALC_CTRL2 = 0x2D */
+#define D2153_ALC_ATTACK_SHIFT				0
+#define D2153_ALC_ATTACK_MAX				0xD
+#define D2153_ALC_RELEASE_SHIFT				4
+#define D2153_ALC_RELEASE_MAX				0xB
+
+/* D2153_ALC_CTRL3 = 0x2E */
+#define D2153_ALC_HOLD_SHIFT				0
+#define D2153_ALC_HOLD_MAX				0x10
+#define D2153_ALC_INTEG_ATTACK_SHIFT			4
+#define D2153_ALC_INTEG_ATTACK_MAX			0x4
+#define D2153_ALC_INTEG_RELEASE_SHIFT			6
+#define D2153_ALC_INTEG_RELEASE_MAX			0x4
+
+/* D2153_ALC_NOISE = 0x2F */
+#define D2153_ALC_NOISE_SHIFT				0
+#define D2153_ALC_NOISE_MAX				0x3F
+
+/* D2153_ALC_TARGET_MIN = 0x30 */
+#define D2153_ALC_THRESHOLD_MIN_SHIFT			0
+#define D2153_ALC_THRESHOLD_MIN_MAX			0x3F
+
+/* D2153_ALC_TARGET_MAX = 0x31 */
+#define D2153_ALC_THRESHOLD_MAX_SHIFT			0
+#define D2153_ALC_THRESHOLD_MAX_MAX			0x3F
+
+/* D2153_ALC_GAIN_LIMITS = 0x32 */
+#define D2153_ALC_ATTEN_MAX_SHIFT			0
+#define D2153_ALC_ATTEN_MAX_MAX				0xf
+#define D2153_ALC_GAIN_MAX_SHIFT			4
+#define D2153_ALC_GAIN_MAX_MAX				0xf
+
+/* D2153_ALC_ANA_GAIN_LIMITS = 0x33 */
+#define D2153_ALC_ANA_GAIN_MIN_SHIFT			0
+#define D2153_ALC_ANA_GAIN_MIN_MAX			0x7
+#define D2153_ALC_ANA_GAIN_MAX_SHIFT			4
+#define D2153_ALC_ANA_GAIN_MAX_MAX			0x7
+
+/* D2153_ALC_ANTICLIP_CTRL = 0x34 */
+#define D2153_ALC_ANTICLIP_EN_SHIFT			7
+#define D2153_ALC_ANTICLIP_EN_MAX			0x1
+
+/* D2153_ALC_ANTICLIP_LEVEL = 0x35 */
+#define D2153_ALC_ANTICLIP_LEVEL_SHIFT			0
+#define D2153_ALC_ANTICLIP_LEVEL_MAX			0x7F
+
+/* D2153_ALC_OFFSET_MAN_M_L/R = 0x39/0x3E */
+#define DA9055_ALC_OFFSET_15_8				0x00FF00
+
+/* D2153_ALC_OFFSET_MAN_U_L/R = 0x3A/0x3F */
+#define DA9055_ALC_OFFSET_19_16				0x0F0000
+
+/* D2153_ALC_CIC_OP_LVL_CTRL = 0x40 */
+#define D2153_ALC_CAPTURE_DATA				(0 << 0)
+#define D2153_ALC_DATA_BOT				(1 << 0)
+#define D2153_ALC_DATA_MIDDLE				(2 << 0)
+#define D2153_ALC_DATA_TOP				(3 << 0)
+#define D2153_ALC_CIC_OP_CHANNEL_LEFT			(0 << 7)
+#define D2153_ALC_CIC_OP_CHANNEL_RIGHT			(1 << 7)
+
+/* D2153_DIG_ROUTING_AIF = 0x44 */
+#define D2153_AIF_L_SRC_SHIFT				0
+#define D2153_AIF_L_SRC_MAX				0x4
+#define D2153_AIF_L_SRC_ADC_L				(0 << 0)
+#define D2153_AIF_R_SRC_SHIFT				4
+#define D2153_AIF_R_SRC_MAX				0x4
+#define D2153_AIF_R_SRC_ADC_R				(1 << 4)
+
+/* D2153_DIG_ROUTING_DAC = 0x45 */
+#define D2153_DAC_L_SRC_SHIFT				0
+#define D2153_DAC_L_SRC_MAX				0x4
+#define D2153_DAC_L_MONO_SHIFT				3
+#define D2153_DAC_R_SRC_SHIFT				4
+#define D2153_DAC_R_SRC_MAX				0x4
+#define D2153_DAC_R_MONO_SHIFT				7
+#define D2153_DAC_MONO_MAX				0x1
+
+/* D2153_DIG_CTRL = 0x46 */
+#define D2153_DAC_L_INV_SHIFT				3
+#define D2153_DAC_R_INV_SHIFT				7
+#define D2153_DAC_INV_MAX				0x1
+
+/* D2153_AIF_CTRL = 0x48 */
+#define D2153_AIF_FORMAT_I2S_MODE			(0 << 0)
+#define D2153_AIF_FORMAT_LEFT_J				(1 << 0)
+#define D2153_AIF_FORMAT_RIGHT_J			(2 << 0)
+#define D2153_AIF_FORMAT_DSP				(3 << 0)
+#define D2153_AIF_FORMAT_MASK				(3 << 0)
+#define D2153_AIF_FORMAT_MONO_MASK				(1 << 4)
+#define D2153_AIF_FORMAT_MONO					(1 << 4)
+#define D2153_AIF_FORMAT_STEREO					(0 << 4)
+#define D2153_AIF_WORD_LENGTH_S16_LE			(0 << 2)
+#define D2153_AIF_WORD_LENGTH_S20_LE			(1 << 2)
+#define D2153_AIF_WORD_LENGTH_S24_LE			(2 << 2)
+#define D2153_AIF_WORD_LENGTH_S32_LE			(3 << 2)
+#define D2153_AIF_WORD_LENGTH_MASK			(3 << 2)
+#define D2153_AIF_OE					(1 << 6)
+#define D2153_AIF_EN_SHIFT				7
+#define D2153_AIF_EN					(1 << D2153_AIF_EN_SHIFT)
+
+/* D1253_AIF_CLK_MODE = 0x4A */
+#define D2153_AIF_BCLKS_PER_WCLK_32			(0 << 0)
+#define D2153_AIF_BCLKS_PER_WCLK_64			(1 << 0)
+#define D2153_AIF_BCLKS_PER_WCLK_128			(2 << 0)
+#define D2153_AIF_BCLKS_PER_WCLK_256			(3 << 0)
+#define D2153_AIF_CLK_POL_INV				(1 << 2)
+#define D2153_AIF_WCLK_POL_INV				(1 << 3)
+#define D2153_AIF_CLK_EN_SLAVE_MODE			(0 << 7)
+#define D2153_AIF_CLK_EN_MASTER_MODE			(1 << 7)
+
+/* D2153_PLL_CTRL = 0x4C */
+#define D2153_PLL_INDIV_5_10_MHZ			(0 << 2)
+#define D2153_PLL_INDIV_10_20_MHZ			(1 << 2)
+#define D2153_PLL_INDIV_20_40_MHZ			(2 << 2)
+#define D2153_PLL_INDIV_40_54_MHZ			(3 << 2)
+#define D2153_PLL_INDIV_MASK				(3 << 2)
+#define D2153_PLL_MSQR_EN				(1 << 4)
+#define D2153_PLL_32K_MODE				(1 << 5)
+#define D2153_PLL_SRM_EN				(1 << 6)
+#define D2153_PLL_EN					(1 << 7)
+
+/* D2153_DAC_NG_CTRL = 0x54 */
+#define D2153_DAC_NG_EN_SHIFT				7
+#define D2153_DAC_NG_EN_MAX				0x1
+
+/* D2153_DAC_NG_SETUP_TIME = 0x55 */
+#define D2153_DAC_NG_SETUP_TIME_SHIFT			0
+#define D2153_DAC_NG_SETUP_TIME_MAX			0x4
+#define D2153_DAC_NG_RAMPUP_RATE_SHIFT			2
+#define D2153_DAC_NG_RAMPUP_RATE_MAX			0x2
+#define D2153_DAC_NG_RAMPDN_RATE_SHIFT			3
+#define D2153_DAC_NG_RAMPDN_RATE_MAX			0x2
+
+/* D2153_DAC_NG_OFF/ON_THRESH = 0x56/0x57 */
+#define D2153_DAC_NG_THRESHOLD_SHIFT			0
+#define D2153_DAC_NG_THRESHOLD_MAX			0x7
+
+/* D2153_CP_CTRL = 0x5C */
+
+#define D2153_CP_MODE_STANDBY		(0 << 2)
+#define D2153_CP_MODE_CPVDD_2		(2 << 2)
+#define D2153_CP_MODE_CPVDD_1		(3 << 2)
+#define D2153_CP_MODE_MASK		(3 << 2)
+#define D2153_CP_MCHANGE_CP_MODE		(0 << 4)
+#define D2153_CP_MCHANGE_LARGEST_VOL			(1 << 4)
+#define D2153_CP_MCHANGE_DAC_VOL_SIZE	(2 << 4)
+#define D2153_CP_MCHANGE_DAC_VOL_SIZE	(2 << 4)
+#define D2153_CP_MCHANGE_SM_SIZE		(3 << 4)
+#define D2153_CP_MCHANGE_MASK			(3 << 4)
+#define D2153_CP_SM_SWITCH				(1 << 6)
+#define D2153_CP_SM_SWITCH_SHIFT		6
+#define D2153_CP_EN						(1 << 7)
+#define D2153_CP_EN_SHIFT				7
+
+/* D2153_MIC_CONFIG = 0x68 */
+#define D2153_DMIC_DATA_SEL_RL_FR			(0 << 0)
+#define D2153_DMIC_DATA_SEL_MASK			(1 << 0)
+#define D2153_DMIC_SAMPLEPHASE_ON_CLK_EDGE		(0 << 1)
+#define D2153_DMIC_SAMPLEPHASE_MASK			(1 << 1)
+#define D2153_DMIC_CLK_RATE_3MHZ			(0 << 2)
+#define D2153_DMIC_CLK_RATE_MASK			(1 << 2)
+
+/* D2153_LIMITER_CTRL1/D2153_NG_CTRL2 = 0x88/0x8D */
+#define D2153_SP_ATK_RATE_SHIFT				0
+#define D2153_SP_ATK_RATE_MAX				7
+#define D2153_SP_REL_RATE_SHIFT				3
+#define D2153_SP_REL_RATE_MAX				7
+
+/* D2153_LIMITER_CTRL1 = 0x88 */
+#define D2153_SP_PWR_THD_HOLD_TIME_SHIFT		6
+#define D2153_SP_PWR_THD_HOLD_TIME_MAX			4
+
+/* D2153_LIMITER_CTRL2 = 0x89 */
+#define D2153_SP_PWR_EN_SHIFT				0
+#define D2153_SP_PWR_EN_MAX				0x1
+#define D2153_SP_THD_EN_SHIFT				1
+#define D2153_SP_THD_EN_MAX				0x1
+#define D2153_SP_PWR_HYS_DIS_SHIFT			2
+#define D2153_SP_PWR_HYS_DIS_MAX			0x1
+#define D2153_SP_THD_HYS_DIS_SHIFT			3
+#define D2153_SP_THD_HYS_DIS_MAX			0x1
+
+/* D2153_LIMITER_PWR_LIM = 0x8A */
+#define D2153_SP_PWR_LIM_SHIFT				0
+#define D2153_SP_PWR_LIM_MAX				0x3F
+
+/* D2153_LIMITER_THD_LIM = 0x8B */
+#define D2153_SP_THD_LIM_SHIFT				0
+#define D2153_SP_THD_LIM_MAX				0x3F
+
+/* D2153_NG_CTRL1 = 0x8C */
+#define D2153_SP_NG_ATT_SHIFT				0
+#define D2153_SP_NG_ATT_MAX				0x3
+#define D2153_SP_NG_EN_SHIFT				7
+#define D2153_SP_NG_EN_MAX				0x1
+
+/* D2153_NG_CTRL2 = 0x8D */
+#define D2153_SP_HOLD_TIME_SHIFT			6
+#define D2153_SP_HOLD_TIME_MAX				3
+
+/* D2153_AUX_L/R_CTRL = 0x90/0x93 */
+#define D2153_AUX_AMP_ZC_EN_SHIFT			4
+#define D2153_AUX_AMP_ZC_EN_MAX				0x1
+#define D2153_AUX_AMP_RAMP_EN_SHIFT			5
+#define D2153_AUX_AMP_RAMP_EN_MAX			0x1
+#define D2153_AUX_AMP_RAMP_EN				(1 << 5)
+#define D2153_AUX_AMP_MUTE_EN_SHIFT			6
+#define D2153_AUX_AMP_MUTE_EN_MAX			0x1
+#define D2153_AUX_AMP_EN_SHIFT				7
+
+/* D2153_AUX_L/R_GAIN = 0x91/0x94 */
+#define D2153_AUX_AMP_GAIN_SHIFT			0
+#define D2153_AUX_AMP_GAIN_MAX				0x3F
+
+/* D2153_MIC_L/R/EXT_CTRL = 0x98/0x9B/0x9E */
+#define D2153_MIC_AMP_IN_SEL_SHIFT			2
+#define D2153_MIC_AMP_IN_SEL_MAX			0x3
+#define D2153_MIC_AMP_MUTE_EN_SHIFT			6
+#define D2153_MIC_AMP_MUTE_EN_MAX			0x1
+#define D2153_MIC_AMP_MUTE_EN				(1 << 6)
+#define D2153_MIC_AMP_EN					(1 << 7)
+#define D2153_MIC_AMP_EN_SHIFT				7
+
+/* D2153_MIC_L/R_GAIN = 0x99/0x9C */
+#define D2153_MIC_AMP_GAIN_SHIFT			0
+#define D2153_MIC_AMP_GAIN_MAX				0x7
+
+/* D2153_MICBIAS1/2/3_CTRL = 0xA1/0xA2/0xA3 */
+#define D2153_MICBIAS_LEVEL_2_1V			(0 << 0)
+#define D2153_MICBIAS_LEVEL_2_5V			(1 << 0)
+#define D2153_MICBIAS_LEVEL_2_6V			(2 << 0)
+#define D2153_MICBIAS_LEVEL_MASK			(3 << 0)
+#define D2153_MICBIAS_EN					(1 << 7)
+#define D2153_MICBIAS_EN_SHIFT				7
+
+/* D2153_MIXIN_L/R_CTRL = 0xA8/0xAC */
+#define D2153_MIXIN_MIX_EN				(1 << 3)
+#define D2153_MIXIN_AMP_ZC_EN_SHIFT			4
+#define D2153_MIXIN_AMP_ZC_EN_MAX			0x1
+#define D2153_MIXIN_AMP_RAMP_EN_SHIFT			5
+#define D2153_MIXIN_AMP_RAMP_EN_MAX			0x1
+#define D2153_MIXIN_AMP_RAMP_EN				(1 << 5)
+#define D2153_MIXIN_AMP_MUTE_EN_SHIFT			6
+#define D2153_MIXIN_AMP_MUTE_EN				(1 << 6)
+#define D2153_MIXIN_AMP_MUTE_EN_MAX			0x1
+#define D2153_MIXIN_AMP_EN					(1 << 7)
+#define D2153_MIXIN_AMP_EN_SHIFT			7
+
+/* D2153_MIXIN_L/R_GAIN = 0xA9/0xAD */
+#define D2153_MIXIN_AMP_GAIN_SHIFT			0
+#define D2153_MIXIN_AMP_GAIN_MAX			0xF
+
+/* D2153_MIXIN_L/R_SELECT = 0xAB/0xAF */
+#define D2153_DMIC_EN_SHIFT				7
+#define D2153_DMIC_EN_MAX				0x1
+
+/* D2153_MIXIN_L_SELECT = 0xAB */
+#define D2153_MIXIN_L_MIX_SELECT_AUX_L_SHIFT		0
+#define D2153_MIXIN_L_MIX_SELECT_MIC_L_SHIFT		1
+#define D2153_MIXIN_L_MIX_SELECT_MIC_L			(1 << 1)
+#define D2153_MIXIN_L_MIX_SELECT_MIC_R_SHIFT		2
+#define D2153_MIXIN_L_MIX_SELECT_MIC_R			(1 << 2)
+#define D2153_MIXIN_L_MIX_SELECT_MIC_EXT_SHIFT		3
+#define D2153_MIXIN_L_MIX_SELECT_MIC_EXT		(1 << 3)
+#define D2153_MIXIN_L_MIX_SELECT_MAX			0x1
+
+/* D2153_MIXIN_R_SELECT = 0xAF */
+#define D2153_MIXIN_R_MIX_SELECT_AUX_R_SHIFT		0
+#define D2153_MIXIN_R_MIX_SELECT_MIC_R_SHIFT		1
+#define D2153_MIXIN_R_MIX_SELECT_MIC_R			(1 << 1)
+#define D2153_MIXIN_R_MIX_SELECT_MIC_L_SHIFT		2
+#define D2153_MIXIN_R_MIX_SELECT_MIC_L			(1 << 2)
+#define D2153_MIXIN_R_MIX_SELECT_MIC_EXT_SHIFT		3
+#define D2153_MIXIN_R_MIX_SELECT_MIC_EXT		(1 << 3)
+#define D2153_MIXIN_R_MIX_SELECT_MIXIN_L_SHIFT		4
+#define D2153_MIXIN_R_MIX_SELECT_MAX			0x1
+#define D2153_MIC_BIAS_OUTPUT_SELECT_BIAS2		(1 << 6)
+
+/* D2153_ADC_L/R_CTRL = 0xB4/0xB8 */
+#define D2153_ADC_RAMP_EN_SHIFT				5
+#define D2153_ADC_RAMP_EN_MAX				0x1
+#define D2153_ADC_RAMP_EN				(1 << 5)
+#define D2153_ADC_MUTE_EN				(1 << 6)
+#define D2153_ADC_MUTE_EN_SHIFT				6
+#define D2153_ADC_MUTE_EN_MAX				0x1
+#define D2153_ADC_EN_SHIFT				7
+#define D2153_ADC_EN					(1 << 7)
+
+/* D2153_ADC_L/R_GAIN = 0xB5/0xB9 */
+#define D2153_ADC_DIGITAL_GAIN_SHIFT			0
+#define D2153_ADC_DIGITAL_GAIN_MAX			0x7F
+
+/* D2153_DAC_L/R_CTRL = 0xBC/0xBF */
+#define D2153_DAC_RAMP_EN_SHIFT				5
+#define D2153_DAC_RAMP_EN_MAX				0x1
+#define D2153_DAC_RAMP_EN				(1 << 5)
+#define D2153_DAC_MUTE_EN				(1 << 6)
+#define D2153_DAC_EN_SHIFT				7
+
+/* D2153_DAC_L/R_GAIN = 0xBD/0xC0 */
+#define D2153_DAC_DIGITAL_GAIN_SHIFT			0
+#define D2153_DAC_DIGITAL_GAIN_MAX			0x7F
+
+/* D2153_MIXOUT_L/R/SP_CTRL = 0xC4/0xC6/0xC8 */
+#define D2153_MIXOUT_MIX_EN				(1 << 3)
+#define D2153_MIXOUT_AMP_EN				(1 << 7)
+#define D2153_MIXOUT_AMP_EN_SHIFT			7
+
+/* D2153_MIXOUT_L_SELECT = 0xC5 */
+#define D2153_MIXOUT_L_MIX_SELECT_AUX_L_SHIFT		0
+#define D2153_MIXOUT_L_MIX_SELECT_MIXIN_L_SHIFT		1
+#define D2153_MIXOUT_L_MIX_SELECT_MIXIN_R_SHIFT		2
+#define D2153_MIXOUT_L_MIX_SELECT_DAC_L				(1 << 3)
+#define D2153_MIXOUT_L_MIX_SELECT_DAC_L_SHIFT		3
+#define D2153_MIXOUT_L_MIX_SELECT_AUX_L_INV_SHIFT	4
+#define D2153_MIXOUT_L_MIX_SELECT_MIXIN_L_INV_SHIFT	5
+#define D2153_MIXOUT_L_MIX_SELECT_MIXIN_R_INV_SHIFT	6
+#define D2153_MIXOUT_L_MIX_SELECT_MAX			0x1
+
+/* D2153_MIXOUT_R_SELECT = 0xC7 */
+#define D2153_MIXOUT_R_MIX_SELECT_AUX_R_SHIFT		0
+#define D2153_MIXOUT_R_MIX_SELECT_MIXIN_R_SHIFT		1
+#define D2153_MIXOUT_R_MIX_SELECT_MIXIN_L_SHIFT		2
+#define D2153_MIXOUT_R_MIX_SELECT_DAC_R				(1 << 3)
+#define D2153_MIXOUT_R_MIX_SELECT_DAC_R_SHIFT		3
+#define D2153_MIXOUT_R_MIX_SELECT_AUX_R_INV_SHIFT	4
+#define D2153_MIXOUT_R_MIX_SELECT_MIXIN_R_INV_SHIFT	5
+#define D2153_MIXOUT_R_MIX_SELECT_MIXIN_L_INV		(1 << 6)
+#define D2153_MIXOUT_R_MIX_SELECT_MIXIN_L_INV_SHIFT	6
+#define D2153_MIXOUT_R_MIX_SELECT_MAX			0x1
+
+/* D2153_MIXOUT_SP_SELECT = 0xC8 */
+#define D2153_MIXOUT_SP_SELECT_MIX_EN		(1 << 3)
+#define D2153_MIXOUT_SP_SELECT_SOFTMIX_EN	(1 << 4)
+#define D2153_MIXOUT_SP_SELECT_AMP_EN		(1 << 7)
+
+/* D2153_MIXOUT_SP_SELECT = 0xC9 */
+#define D2153_MIXOUT_SP_MIX_SELECT_AUX_R_SHIFT		0
+#define D2153_MIXOUT_SP_MIX_SELECT_MIXIN_R_SHIFT	1
+#define D2153_MIXOUT_SP_MIX_SELECT_MIXIN_L_SHIFT	2
+#define D2153_MIXOUT_SP_MIX_SELECT_DAC_R			(1 << 3)
+#define D2153_MIXOUT_SP_MIX_SELECT_DAC_R_SHIFT		3
+#define D2153_MIXOUT_SP_MIX_SELECT_AUX_R_INV_SHIFT	4
+#define D2153_MIXOUT_SP_MIX_SELECT_MIXIN_R_INV_SHIFT	5
+#define D2153_MIXOUT_SP_MIX_SELECT_MIXIN_L_INV_SHIFT	6
+#define D2153_MIXOUT_SP_MIX_SELECT_MIXIN_L_INV			(1 << 6)
+#define D2153_MIXOUT_SP_MIX_SELECT_MAX			0x1
+
+/* D2153_HP_L/R_CTRL = 0xCC/0xCF */
+#define D2153_HP_AMP_OE					(1 << 3)
+#define D2153_HP_AMP_ZC_EN_SHIFT			4
+#define D2153_HP_AMP_ZC_EN_MAX				0x1
+#define D2153_HP_AMP_RAMP_EN_SHIFT			5
+#define D2153_HP_AMP_RAMP_EN_MAX			0x1
+#define D2153_HP_AMP_RAMP_EN				(1 << 5)
+#define D2153_HP_AMP_MUTE_EN                (1 << 6)
+#define D2153_HP_AMP_MUTE_EN_SHIFT			6
+#define D2153_HP_AMP_MUTE_EN_MAX			0x1
+#define D2153_HP_AMP_EN						(1 << 7)
+#define D2153_HP_AMP_EN_SHIFT				7
+
+/* D2153_HP_L/R_GAIN = 0xCD/0xD0 */
+#define D2153_HP_AMP_GAIN_SHIFT				0
+#define D2153_HP_AMP_GAIN_MAX				0x7F
+
+/* D2153_EP_CTRL = 0xD4 */
+#define D2153_EP_AMP_OE					(1 << 3)
+#define D2153_EP_AMP_ZC_EN_SHIFT			4
+#define D2153_EP_AMP_ZC_EN_MAX				0x1
+#define D2153_EP_AMP_RAMP_EN_SHIFT			5
+#define D2153_EP_AMP_RAMP_EN_MAX			0x1
+#define D2153_EP_AMP_RAMP_EN				(1 << 5)
+#define D2153_EP_AMP_MUTE_EN				(1 << 6)
+#define D2153_EP_AMP_MUTE_EN_SHIFT			6
+#define D2153_EP_AMP_MUTE_EN_MAX			0x1
+#define D2153_EP_AMP_EN						(1 << 7)
+#define D2153_EP_AMP_EN_SHIFT				7
+
+/* D2153_EP_GAIN = 0xD5 */
+#define D2153_EP_AMP_GAIN_SHIFT				0
+#define D2153_EP_AMP_GAIN_MAX				0x7F
+
+/* D2153_SP_CTRL = 0xD8 */
+#define D2153_SP_AMP_ZC_EN_SHIFT			4
+#define D2153_SP_AMP_ZC_EN_MAX				0x1
+#define D2153_SP_AMP_RAMP_EN_SHIFT			5
+#define D2153_SP_AMP_RAMP_EN_MAX			0x1
+#define D2153_SP_AMP_RAMP_EN				(1 << 5)
+#define D2153_SP_AMP_MUTE_EN			(1 << 6)
+#define D2153_SP_AMP_MUTE_EN_SHIFT			6
+#define D2153_SP_AMP_MUTE_EN_MAX			0x1
+#define D2153_SP_AMP_EN						(1 << 7)
+#define D2153_SP_AMP_EN_SHIFT				7
+
+/* D2153_SP_GAIN = 0xD9 */
+#define D2153_SP_AMP_GAIN_SHIFT				0
+#define D2153_SP_AMP_GAIN_MAX				0x3F
+
+/* D2153_REFERENCES = 0xE4 */
+#define D2153_BIAS_EN					(1 << 3)
+#define D2153_VMID_FAST_CHARGE			(1 << 4)
+#define D2153_VMID_FAST_DISCHARGE		(1 << 5)
+#define D2153_VMID_EN					(1 << 7)
+
+/* D2153_IO_CTRL = 0xE5 */
+#define D2153_IO_VOLTAGE_LEVEL_1_2V_2_8V		(0 << 0)
+#define D2153_IO_VOLTAGE_LEVEL_MASK			(1 << 0)
+
+/* D2153_LDO_CTRL = 0xE6 */
+#define D2153_LDO_LEVEL_SELECT_1_05V			(0 << 4)
+#define D2153_LDO_LEVEL_SELECT_MASK			(3 << 4)
+#define D2153_LDO_EN_DISABLE				(0 << 7)
+#define D2153_LDO_EN_MASK				(1 << 7)
+
+
+/* Register inversion defines */
+#define D2153_NO_INVERT			0
+#define D2153_INVERT			1
+
+/* PLL related defines */
+#define D2153_SYSCLK_MCLK		0
+#define D2153_SYSCLK_PLL		1
+#define D2153_PLL_FREQ_OUT_90316800	90316800
+#define D2153_PLL_FREQ_OUT_98304000	98304000
+#define D2153_PLL_FREQ_OUT_94310400	94310400
+#define D2153_PLL_INDIV_5_10_MHZ_VAL	2
+#define D2153_PLL_INDIV_10_20_MHZ_VAL	4
+#define D2153_PLL_INDIV_20_40_MHZ_VAL	8
+#define D2153_PLL_INDIV_40_54_MHZ_VAL	16
+
+/* Byte related defines */
+#define D2153_BYTE_SHIFT		8
+#define D2153_BYTE_MASK			0xFF
+
+/* ALC related defines */
+#define D2153_ALC_OFFSET_15_8		0x00FF00
+#define D2153_ALC_OFFSET_19_16		0x0F0000
+#define D2153_ALC_AVG_ITERATIONS	5
+
+enum clk_src {
+	D2153_CLKSRC_MCLK
+};
+
+/* Codec private data */
+struct d2153_codec_priv {
+	struct i2c_client *i2c_client;
+	int power_mode;
+#ifdef CONFIG_SND_SOC_D2153_AAD
+	struct d2153 *d2153_pmic;
+	struct i2c_client *aad_i2c_client;
+	int switch_state;
+	int codec_init;
+#endif /* CONFIG_SND_SOC_D2153_AAD */
+	struct snd_soc_codec *codec;
+	unsigned int mclk_rate;
+	bool srm_en;
+	int source;
+	u32 freq_ref;
+	unsigned int fout;
+	bool alc_calib_auto;
+	bool alc_en;
+	u8 spk_mixer_out;
+	u8 spk_amp;
+#ifndef D2153_DEFAULT_SET_MICBIAS
+	u8 micbias1_level;
+	u8 micbias2_level;
+	u8 micbias3_level;
+#endif
+};
+
+int d2153_codec_power(struct snd_soc_codec *codec, int on);
+int d2153_aad_enable(struct snd_soc_codec *codec);
+int d2153_aad_resume(struct snd_soc_codec *codec);
+int d2153_set_aif_adjust(struct snd_soc_codec *codec);
+int d2153_set_aif_adjust_dac(struct snd_soc_codec *codec);
+#endif /* _D2153_H */

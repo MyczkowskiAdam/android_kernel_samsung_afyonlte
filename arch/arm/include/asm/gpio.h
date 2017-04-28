@@ -2,6 +2,9 @@
 #define _ARCH_ARM_GPIO_H
 
 #if CONFIG_ARCH_NR_GPIO > 0
+#ifdef ARCH_NR_GPIOS
+#undef ARCH_NR_GPIOS
+#endif
 #define ARCH_NR_GPIOS CONFIG_ARCH_NR_GPIO
 #endif
 

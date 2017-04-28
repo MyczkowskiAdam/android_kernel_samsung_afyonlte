@@ -15,6 +15,14 @@
 #define BAD_IRQ		3
 #define BAD_UNDEFINSTR	4
 
+#ifdef CONFIG_IRQ_TRACE
+/* TMPLOG_SIZE_PERCPU = (TMPLOG_TOTAL_SIZE / 2) = 128kB per CPU */
+#define TMPLOG_SIZE_PERCPU 	0x00020000
+/* TMPLOG_ENTRIES_PERCPU = (TMPLOG_TOTAL_SIZE / 32 bytes) = 4096 entries per CPU */
+#define TMPLOG_ENTRIES_PERCPU	0x00001000
+#define CMCNT3 			0xe6130314
+#endif
+
 @
 @ Most of the stack format comes from struct pt_regs, but with
 @ the addition of 8 bytes for storing syscall args 5 and 6.
@@ -75,6 +83,10 @@
 
 #ifndef CONFIG_THUMB2_KERNEL
 	.macro	svc_exit, rpsr
+#ifdef	CONFIG_IRQ_TRACE
+	mov	r7,\rpsr
+	bl	save_data_svc
+#endif
 	msr	spsr_cxsf, \rpsr
 #if defined(CONFIG_CPU_V6)
 	ldr	r0, [sp]
@@ -89,6 +101,40 @@
 	.endm
 
 	.macro	restore_user_regs, fast = 0, offset = 0
+#ifdef	CONFIG_IRQ_TRACE
+	MRC     p15, 0, r8, c0, c0, 5                   /* Read MPIDR, MP affinty register*/
+	UBFX    r8, r8, #0x0, #0x2                      /* Extract the CPUID Field      */
+/*	CMP     r8, #0x0 */
+	LDR     r9, =tmplog_nocache_address
+	LDR     r11, [r9]
+	CMP     r11, #0x0
+	BEQ	1f
+
+	CMP     r8, #0x0
+	MOVEQ   r8, r11
+	ADDNE   r8, r11, #TMPLOG_SIZE_PERCPU
+
+	LDR	r9, [r8]
+	ADD	r9, r9, #1
+	CMP	r9, #TMPLOG_ENTRIES_PERCPU
+
+	MOVHS	r9, #1
+	STR	r9, [r8]
+	ADD	r8, r8, r9, lsl #5
+
+	LDR	r9, = CMCNT3
+	LDR	r9, [r9]
+	MOV	r10, #0xffffffdd		@exit user IRQ
+	ldr	r11, [sp, #\offset + S_LR]	@ lr
+	ldr	r12, [sp, #\offset + S_SP]	@ sp
+	STMIA	r8!, {r9,r10,r11,r12}		@save current_timer, mark, lr, sp
+	mov	r12, r10
+	ldr	r9,  [sp, #\offset + S_PC]	@ pc
+	ldr	r10, [sp, #\offset + S_PSR]	@ psr
+	mov	r11, r10
+	STMIA	r8!, {r9,r10,r11,r12}		@pc, psr, psr,mark
+1:
+#endif
 	ldr	r1, [sp, #\offset + S_PSR]	@ get calling cpsr
 	ldr	lr, [sp, #\offset + S_PC]!	@ get pc
 	msr	spsr_cxsf, r1			@ save in spsr_svc

@@ -16,6 +16,12 @@
 
 #include "base.h"
 
+#ifdef CONFIG_HOTPLUG_CPU_MGR 
+#ifdef CONFIG_ARCH_R8A7373
+#include <mach/pm.h>
+#endif
+#endif /*CONFIG_HOTPLUG_CPU_MGR & CONFIG_ARCH_R8A7373*/
+
 struct bus_type cpu_subsys = {
 	.name = "cpu",
 	.dev_name = "cpu",
@@ -44,12 +50,20 @@ static ssize_t __ref store_online(struct device *dev,
 	cpu_hotplug_driver_lock();
 	switch (buf[0]) {
 	case '0':
+#ifdef CONFIG_HOTPLUG_CPU_MGR
+		ret = cpu_down_manager(cpu->dev.id, SYSFS_HOTPLUG_ID);
+#else /*!defined(CONFIG_HOTPLUG_CPU_MGR)*/
 		ret = cpu_down(cpu->dev.id);
+#endif /*CONFIG_HOTPLUG_CPU_MGR*/
 		if (!ret)
 			kobject_uevent(&dev->kobj, KOBJ_OFFLINE);
 		break;
 	case '1':
+#ifdef CONFIG_HOTPLUG_CPU_MGR
+		ret = cpu_up_manager(cpu->dev.id, SYSFS_HOTPLUG_ID);
+#else /*!defined(CONFIG_HOTPLUG_CPU_MGR)*/
 		ret = cpu_up(cpu->dev.id);
+#endif /*CONFIG_HOTPLUG_CPU_MGR*/
 		if (!ret)
 			kobject_uevent(&dev->kobj, KOBJ_ONLINE);
 		break;

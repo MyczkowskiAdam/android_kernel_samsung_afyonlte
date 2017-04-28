@@ -6,6 +6,8 @@ phonet-y := \
 	socket.o \
 	datagram.o \
 	sysctl.o \
-	af_phonet.o
+	af_phonet.o \
+	ld_phonet.o
 
 pn_pep-y := pep.o pep-gprs.o
+subdir-ccflags-y += -Werror

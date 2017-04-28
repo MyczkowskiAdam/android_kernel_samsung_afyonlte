@@ -10,6 +10,22 @@ config SENSORS_LIS3LV02D
 	select INPUT_POLLDEV
 	default n
 
+config USB_SWITCH_TSU6712
+	bool "MUIC TSU6712"
+	help
+	  MUIC TSU6712
+
+config USB_SWITCH_RT8973
+	bool "MUIC RT8973"
+	help
+	  MUIC RT8973
+
+config USE_MUIC
+	bool "MUIC USE"
+	depends on USB_SWITCH_RT8973||USB_SWITCH_TSU6712
+	help
+	 MUIC setting
+
 config AD525X_DPOT
 	tristate "Analog Devices Digital Potentiometers"
 	depends on (I2C || SPI) && SYSFS
@@ -382,6 +398,100 @@ config HMC6352
 	  This driver provides support for the Honeywell HMC6352 compass,
 	  providing configuration and heading data via sysfs.
 
+config SENSORS_AK8975
+	tristate "AK8975 compass support"
+	default n
+	depends on I2C
+	help
+	  If you say yes here you get support for Asahi Kasei's
+	  orientation sensor AK8975.
+
+config SENSORS_K3DH
+	tristate "K3DH acceleration sensor support"
+	depends on I2C
+	default n
+	help
+	  Driver for STMicroelectronic K3DH accelerometer.
+
+config SENSORS_K2HH
+        tristate "K2HH acceleration sensor support"
+        depends on I2C
+        default n
+        help
+          Driver for STMicroelectronic K2HH accelerometer.
+
+config SENSORS_ACC_12BIT
+	tristate "12bit acceleration sensor support"
+	depends on I2C
+	default n
+	help
+	  Driver for 12bit accelerometer.
+
+config SENSORS_ACC_16BIT
+        tristate "16bit acceleration sensor support"
+        depends on I2C
+        default n
+        help
+          Driver for 16bit accelerometer.
+
+config SENSORS_ACC_FILTER
+	tristate "acceleration sensor filter support"
+	depends on I2C
+	default n
+	help
+	  Driver for 12bit accelerometer.
+
+config SENSORS_GP2AP002
+	tristate "GP2AP002 sensor support"
+	depends on I2C
+	default n
+	help
+	  If you say yes here you get support for Sharp's sensor GP2A.
+
+config SENSORS_GP2A030
+	depends on I2C
+	tristate "GP2AP030 driver"
+	default n
+	help
+	  This option enables proximity & light sensors using gp2ap030 driver.
+
+config SENSORS_HSCD
+	tristate "ALPS Magnetic Sensor HSCD Driver Support"
+         depends on I2C
+	default n
+         help
+	  If you say yes here you get support for the ALPS magnateic sensor
+
+config SENSORS_HSCDTD006A
+	tristate "ALPS Magnetic Sensor HSCDTD006A Driver Support"
+         depends on I2C
+	default n
+         help
+	  If you say yes here you get support for the ALPS magnateic sensor
+
+config SENSORS_HSCDTD008A
+	tristate "ALPS Magnetic Sensor HSCDTD008A Driver Support"
+         depends on I2C
+	default n
+         help
+	  If you say yes here you get support for the ALPS magnateic sensor
+
+config SENSORS_MAG_15BIT
+	tristate "15bit Magnetic Sensor Driver Support"
+         depends on I2C
+	default n
+         help
+	  If you say yes here you get support for the ALPS magnateic sensor
+
+config SENSORS_ATSN01P
+	depends on I2C
+	tristate "ATSN01P Grip Sensor Support"
+	default n
+	help
+	  Say Y here if you use ATSN01P.
+	  This option enables Grip sensors using AD SEMICON ATSN01P device driver.
+	  Say N here if you do not use ATSN01P.
+
 config EP93XX_PWM
 	tristate "EP93xx PWM support"
 	depends on ARCH_EP93XX
@@ -424,6 +534,10 @@ config TI_DAC7512
 
 	  This driver can also be built as a module. If so, the module
 	  will be called ti_dac7512.
+
+config UID_STAT
+	bool "UID based statistics tracking exported to /proc/uid_stat"
+	default n
 
 config VMWARE_BALLOON
 	tristate "VMware Balloon Driver"
@@ -481,6 +595,36 @@ config PCH_PHUB
 	  To compile this driver as a module, choose M here: the module will
 	  be called pch_phub.
 
+config BTHID
+	tristate "Bluetooth HID"
+	depends on HID
+	default n
+	---help---
+	This driver adds support for HID for Broadcom bluetooth
+	devices.
+
+config BCM_RFKILL
+        bool "BCM RFKILL driver support for Bluetooth"
+        depends on RFKILL
+        default n
+        help
+          This driver adds RFKILL support for Broadcom bluetooth
+
+config BCM_BT_LPM
+        bool "BCM BT Low Power support"
+        default n
+        help
+          This driver adds Low Power mode support for Broadcom bluetooth
+
+config USB_SWITCH_FSA9485
+	tristate "FSA9480 USB Switch"
+	depends on I2C
+	help
+	  The FSA9480 is a USB port accessory detector and switch.
+	  The FSA9480 is fully controlled using I2C and enables USB data,
+	  stereo and mono audio, video, microphone and UART data to use
+	  a common connector port.
+
 config USB_SWITCH_FSA9480
 	tristate "FSA9480 USB Switch"
 	depends on I2C
@@ -490,6 +634,16 @@ config USB_SWITCH_FSA9480
 	  stereo and mono audio, video, microphone and UART data to use
 	  a common connector port.
 
+config OPTICAL_TAOS_TRITON
+	depends on I2C
+	tristate "TAOS ambient light and proximity input device"
+	default n
+
+config OPTICAL_TAOS_TMD2672X
+        depends on I2C
+        tristate "TAOS ambient proximity input device without light sensor"
+        default n
+
 config MAX8997_MUIC
 	tristate "MAX8997 MUIC Support"
 	depends on MFD_MAX8997
@@ -498,6 +652,53 @@ config MAX8997_MUIC
 	  Maxim MAX8997 PMIC.
 	  The MAX8997 MUIC is a USB port accessory detector and switch.
 
+config WL127X_RFKILL
+	tristate "Bluetooth power control driver for TI wl127x"
+	depends on RFKILL
+	default n
+	---help---
+	 Creates an rfkill entry in sysfs for power control of Bluetooth
+	 TI wl127x chips.
+
+config RMU2_CMT15
+	tristate "rmu2_cmt15"
+	default n
+	depends on RMU2_RWDT
+	select FIQ
+	select FIQ_GLUE
+
+config EOS2_RMTA_CTRL
+	tristate "eos2_rmta_ctrl"
+	help
+        This enables the sysfs entry under /sys/kernel/rmta_control.
+
+        It can be used to echo appropriate values to charging_status variable.
+        0 indicates charging diabled, 1 indicates charging enabled.
+
+config RWDT_CMT15_TEST
+	bool "CMT15 Test"
+	default n
+	depends on RMU2_CMT15
+	help
+	  This enables /proc/proc_watch_entry to test various crash test cases.
+
+	  You can use the echo commmad to write value into /proc/proc_watch_entry
+	  to skip clearing RWDT for debugging. RWDT counter will be overflowed
+	  after overflow time.
+
+config SHBUS_TIMEOUT_CHECK_ENABLE
+	bool "Enable bus timeout checking"
+	depends on RMU2_CMT15
+	help
+	 Say Y here to enable SHwy Bus Timeout Control Function.
+
+	 This function is to help the debugging of SHwy bus hung-up
+	 from the point of view of CPG operation.
+
+config SEC_MAKE_LCD_TEST
+	tristate "For LCD TEST Binary"
+	default n
+
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
 source "drivers/misc/cb710/Kconfig"
@@ -505,5 +706,8 @@ source "drivers/misc/iwmc3200top/Kconfig"
 source "drivers/misc/ti-st/Kconfig"
 source "drivers/misc/lis3lv02d/Kconfig"
 source "drivers/misc/carma/Kconfig"
+source "drivers/misc/pwm/Kconfig"
+source "drivers/misc/vibrator/Kconfig"
+source "drivers/misc/pcm2pwm/Kconfig"
 source "drivers/misc/altera-stapl/Kconfig"
 endmenu

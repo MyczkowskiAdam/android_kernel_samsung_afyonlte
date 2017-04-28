@@ -41,6 +41,16 @@ config ARCH_R8A7779
 	select ARM_GIC
 	select ARCH_WANT_OPTIONAL_GPIOLIB
 
+config ARCH_R8A7373
+	bool "R-Mobile U2 (R8A7373)"
+	select CPU_V7
+	select SH_CLK_CPG
+	select ARCH_WANT_OPTIONAL_GPIOLIB
+	select ARM_GIC
+	select CLKSRC_MMIO
+	select HAVE_SCHED_CLOCK
+	select ARM_ERRATA_775420
+
 comment "SH-Mobile Board Type"
 
 config MACH_G3EVM
@@ -58,6 +68,7 @@ config MACH_AP4EVB
 	depends on ARCH_SH7372
 	select ARCH_REQUIRE_GPIOLIB
 	select SH_LCD_MIPI_DSI
+	select SND_SOC_AK4642 if SND_SIMPLE_CARD
 
 choice
 	prompt "AP4EVB LCD panel selection"
@@ -82,6 +93,7 @@ config MACH_MACKEREL
 	bool "mackerel board"
 	depends on ARCH_SH7372
 	select ARCH_REQUIRE_GPIOLIB
+	select SND_SOC_AK4642 if SND_SIMPLE_CARD
 
 config MACH_KOTA2
 	bool "KOTA2 board"
@@ -98,6 +110,55 @@ config MACH_MARZEN
 	depends on ARCH_R8A7779
 	select ARCH_REQUIRE_GPIOLIB
 
+config MACH_LOGANLTE
+	bool "LoganLTE board"
+	select ARCH_REQUIRE_GPIOLIB
+	depends on ARCH_R8A7373
+
+config MACH_AFYONLTE
+	bool "LoganLTE board"
+	select ARCH_REQUIRE_GPIOLIB
+	depends on ARCH_R8A7373
+
+config MACH_AFYONLTE_LATIN
+	bool "LoganLTE board"
+	select ARCH_REQUIRE_GPIOLIB
+	depends on ARCH_R8A7373
+
+config MACH_HEATLTE
+	bool "LoganLTE board"
+	select ARCH_REQUIRE_GPIOLIB
+	depends on ARCH_R8A7373
+
+config MACH_U2USB
+	bool "U2USB board"
+	select ARCH_REQUIRE_GPIOLIB
+	depends on ARCH_R8A7373
+
+config U2_TIMERS
+	bool "U2 timers setup"
+	default n
+	help
+	 sets up the current timer, sched clock setup, clock event timers and clocksources.
+
+config U2_SDHI
+	bool "U2 sdhi setup implementation "
+	default n
+	help
+	 selects the sdhi setup implementation for u2 chipsets.
+
+config U2_GPIOKEY
+	bool "U2 gpio key setup implementation "
+	default n
+	help
+	 selects the gpio setup implemtation for u2 chipsets.
+
+config U2_STM_ETR_TO_SDRAM
+	bool "U2 STM ETR to SDRAM"
+	depends on ARCH_R8A7373
+	help
+	  R-Mobile-U2 STM Traces through ETR to SDRAM.
+
 comment "SH-Mobile System Configuration"
 
 config CPU_HAS_INTEVT
@@ -112,6 +173,7 @@ config MEMORY_START
 	default "0x40000000" if MACH_G4EVM || MACH_AP4EVB || MACH_AG5EVM || \
 				MACH_MACKEREL || MACH_BONITO
 	default "0x41000000" if MACH_KOTA2
+	default "0x49000000" if  MACH_LOGANLTE || MACH_AFYONLTE || MACH_HEATLTE
 	default "0x00000000"
 	---help---
 	  Tweak this only when porting to a new machine which does not
@@ -122,7 +184,7 @@ config MEMORY_SIZE
 	hex "Physical memory size"
 	default "0x08000000" if MACH_G3EVM
 	default "0x08000000" if MACH_G4EVM
-	default "0x20000000" if MACH_AG5EVM || MACH_BONITO
+	default "0x20000000" if MACH_AG5EVM || MACH_LOGANLTE || MACH_AFYONLTE || MACH_HEATLTE
 	default "0x1e000000" if MACH_KOTA2
 	default "0x10000000" if MACH_AP4EVB || MACH_MACKEREL
 	default "0x04000000"
@@ -149,21 +211,330 @@ config SHMOBILE_TIMER_HZ
 
 config SH_TIMER_CMT
 	bool "CMT timer driver"
+	help
+	  This enables build of the CMT timer driver.
+
+config SH_TIMER_CMT_ARM
+	bool "CMT timer driver dedicated for ARM CPU timer"
 	default y
 	help
 	  This enables build of the CMT timer driver.
 
-config SH_TIMER_TMU
-	bool "TMU timer driver"
-	default y
+endmenu
+
+menu "CPU Frequency configuration"
+config ARCH_HAS_CPUFREQ
+	bool
+
+config CPUFREQ_SUPPORT
+	bool "Enable support for CPU srequency scaling"
+	select ARCH_HAS_CPUFREQ
 	help
-	  This enables build of the TMU timer driver.
+	  This enables support for CPU frequency scaling
+	  with R-Mobile U2 HW
+	  DFS is developed basing on CPUFreq framework of Linux kernel of Android OS.
+	  DFS is a feature offered to reduce power consumption
+	  by changing system clock dynamically (based on system load).
+	  When system load meets a specific condition,
+	  system clocks frequencies will be changed automatically.
 
 endmenu
 
 config SH_CLK_CPG
 	bool
 
+menu "Modem STM trace and debug configuration"
+
+config MUX_STM_TO_SDHI1
+	bool "Mux STM to SDHI1"
+	default y
+	help
+	  Mux STM CLK, DATA0-3, and SIDI to SDHI1 interface.
+
+endmenu
+
+menu "SH-Mobile TrustZone Configuration"
+config ARM_TZ
+	bool "ARM trustzone (TZ) Configuration."
+	default n
+# 	depends ARM
+	---help---
+	  ARM trustzone (TZ) Configuration.
+endmenu
+
+menu "SH-Mobile CPUFreq Setting"
+config SHMOBILE_CPUFREQ
+	bool "SH-Mobile has CPUFreq support"
+	depends on ARCH_SHMOBILE
+	select ARCH_HAS_CPUFREQ
+	default n
+
+config CPUFREQ_OVERDRIVE
+	bool "SH-Mobile CPUFreq overdrive"
+	depends on SHMOBILE_CPUFREQ
+	default n
+	help
+	  By default, maximum CPU frequency (Z clock) is 1.2 GHz only.
+	  When this config is enabled, max CPU frequency is 1.5 GHz
+	  instead of 1.2 GHz as normal. The frequency steps will also been
+	  adjusted when this config is enabled.
+
+config SH_TRANSITION_LATENCY
+	int "Transition Latency (ms)"
+	range 10 1000
+	default "50"
+	depends on SHMOBILE_CPUFREQ
+	help
+	  Transition latency between each sampling.
+
+config SH_UP_THRESHOLD
+	int "Up threshold (%)"
+	range 50 100
+	default "80"
+	depends on SHMOBILE_CPUFREQ
+	help
+	  Upper threshold.
+
+config SH_DOWN_THRESHOLD
+	int "Down threshold (%)"
+	range 10 50
+	default "20"
+	depends on SHMOBILE_CPUFREQ
+	help
+	  Lower threshold.
+
+config SH_FRQ_STEP
+	int "Transition frequency step (%)"
+	range 1 100
+	default "15"
+	depends on SHMOBILE_CPUFREQ
+	help
+	  Frequency Step.
+
+config SH_SAMPLING_DOWN_FACTOR
+	int "Sampling Down Factor"
+	range 1 20
+	default "20"
+	depends on SHMOBILE_CPUFREQ
+	help
+	  Multiplier of transition latency.
+
+config SH_ENABLE_DYNAMIC_DOWN_DIFF
+	bool "SH-Mobile Support Dynamic down_differential"
+	depends on SHMOBILE_CPUFREQ
+	default n
+	help
+	  This enables move down_differential parameter.
+	  y : down_differential will decrease on each "CPU Frequency sampling" work.
+	  n : down_differential is fixed value.
+
+endmenu
+
+config PDC
+	bool "Power Domain Control"
+	default n
+	depends on PM_RUNTIME
+	help
+	  This enables build of PDC driver.
+
+config PM_HAS_SECURE
+	default y
+	bool "Support Secure OS by Power Management"
+	depends on ARCH_SHMOBILE
+	depends on ARM_SEC_HAL
+	help
+	  This enables PM support for Secure OS.
+
+config HOTPLUG_ARCH_R8A7373
+	default y
+	bool "Support CPU Hotplug for R-MobileU2"
+	depends on HOTPLUG_CPU
+	help
+	  This CPU Hotplug for R-MobileU2 LSI generic power saving
+	  Non-boot CPU(s) can ON/OFF with this fuction
+	  The implementation is specific for R-MobileU2
+	  It can support hotplug non-boot CPU in active state, Idle and Suspend
+
+config HOTPLUG_CPU_MGR
+	default y
+	bool "Support CPU Hotplug Manager for R-MobileU2 New power consumption"
+	depends on HOTPLUG_CPU
+	depends on ARCH_SHMOBILE
+	depends on HOTPLUG_ARCH_R8A7373
+	help
+	  This CPU Hotplug Manager for R-MobileU2 New power consumption
+	  It relatd to 3 modules: Dynamic Frequency Scaling (DFS), Hotplug
+	  and Sleep (WFI)/CoreStandy)
+
+config PM_BOOT_SYSFS
+	default y
+	bool "Support Restrain DVFS at the time of start by Power Management"
+	help
+	  This enables build for Power Management
+	  It created new file which controls the operation of Dynamic Frequency
+	  Scaling (DFS) and Sleep (WFI)/CoreStandy) during boot time
+
 source "drivers/sh/Kconfig"
 
+config RENESAS
+	bool "Renesas reference implementations"
+	default n
+
+config RENESAS_BT
+	bool "Renesas reference implementation for BT"
+	default n
+	depends on RENESAS
+
+config RENESAS_NFC
+	bool "Renesas reference implementation for NFC"
+	default n
+	depends on RENESAS
+
+config RENESAS_GPS
+	bool "Renesas reference implementation for GPS"
+	default n
+	depends on RENESAS
+config BRCM_UNIFIED_DHD_SUPPORT
+	bool "Renesas reference implementation for WiFi"
+	default n
+config RENESAS_WIFI
+	bool "Renesas reference implementation for WiFi"
+	default n
+	depends on BRCM_UNIFIED_DHD_SUPPORT
+
+config BOARD_VERSION_V050
+	#default y
+	bool "board_revision"
+	help
+	  Board revision
+comment "Debugging Feature"
+
+config BOARD_VERSION_LOGANLTE
+	bool "board_revision"
+	help
+	  Board revision number
+
+config BOARD_VERSION_AFYONLTE
+	bool "board_revision"
+	help
+	  Board revision number
+
+config BOARD_VERSION_HEATLTE
+	bool "board_revision"
+	help
+	  Board revision number
+
+#
+# GPS devices
+#
+config GPS_CSR_GSD5T
+	bool "CSR_GSD5T_CHIPSET"
+	default n
+
+config GPS_BCM4752
+	bool "BROADCOM_BCM4752_CHIPSET"
+	default n
+
+if BT
+config BT_CSR8811
+	bool "Enable CSR8811 driver"
+	default n
+
+config BT_BCM4330
+	bool "Enable BCM4330 driver"
+	default n
+
+config BT_BCM4334
+	bool "Enable BCM4334 driver"
+	default n
+	help
+	  Adds BCM4334 RFKILL driver for Broadcom BCM4334 chipset
+
+config BCM4334_BT
+	bool "Enable BCM4334 driver on Renesas Baseband"
+	default y
+	help
+	  Adds BCM4334 RFKILL driver for Broadcom BCM4334 chipset
+
+config BCM4330_MODULE
+	bool "Enable BCM4330 driver on Renesas Baseband"
+	default y
+
+config BT_BCM43241
+	bool "Enable BCM43241 driver"
+	default n
+	help
+	  Adds BCM43241 RFKILL driver for Broadcom BCM4334 chipset
+
+config BT_MGMT
+	bool "Bluetooth Mgmt"
+	default n
+	help
+	  This is for bluetooth mgmt
 endif
+
+config SAMSUNG_SENSOR
+	bool "Enable Samsung Sensor Driver"
+	default n
+	---help---
+	  support Samsung Sensor Driver
+
+config FLASH_MIC2871
+	bool "Enable MIC2871 driver"
+	default n
+	---help---
+ 	    Adds MIC2871 LED Flash driver
+
+config FLASH_RT8547
+        bool "Enable RT8547 driver"
+        default n
+        ---help---
+            Adds RT8547 LED Flash driver
+		It enables Flash
+		Support for Flash Driver
+
+source "arch/arm/mach-shmobile/ramdefrag/Kconfig"
+
+config SHMOBILE_PASR_SUPPORT
+	default n
+	bool "Support Partial Array Self Refresh"
+	depends on SHMOBILE_RAM_DEFRAG
+	help
+	  This enables PASR support
+	  It is called by Suspend module before entering suspend state
+
+menu "Kernel low-level debugging via SuperH SCI(F) port"
+
+config DEBUG_LL_SH_SCI_BASE
+	depends on DEBUG_SH_SCI
+	hex "Physical base address"
+	default "0x00000000"
+
+endmenu
+
+config IRQ_TRACE
+	bool "Hardware vector tracing"
+	help
+	  This enables to-memory tracing of ARM vector entry and exit,
+	  for extraction by the crashlog tool.
+
+config SH_RAMDUMP
+	default y
+	bool "Support for Ramdump"
+	depends on ARCH_R8A7373
+	help
+	  This enables ramdump feature. It will flush caches from oops,panic
+	  and emerg kmsg callback. It will also save exceptio, core&mmu and
+	  some hw registers to ram.
+
+# Samsung debugging features
+source arch/arm/mach-shmobile/Kconfig.sec
+
+# endif for ARCH_SHMOBILE
+endif
+
+config SEC_THERMISTOR
+	bool "Use external thermistor with ADC"
+	default n
+	help
+	  Use thermistor driver to check system temperature

@@ -363,6 +363,11 @@ int __init register_intc_controller(struct intc_desc *desc)
 
 	d->skip_suspend = desc->skip_syscore_suspend;
 
+	if (desc->set_type)
+		d->set_type = desc->set_type;
+	if (desc->set_wake)
+		d->set_wake = desc->set_wake;
+
 	nr_intc_controllers++;
 
 	return 0;

@@ -1,6 +1,8 @@
 /*
  *  Digital Audio (PCM) abstract layer
  *  Copyright (c) by Jaroslav Kysela <perex@perex.cz>
+ *  Copyright (c) 2013 renesas mobile corp.
+ *  all rights reserved.
  *
  *
  *   This program is free software; you can redistribute it and/or modify
@@ -1089,8 +1091,11 @@ static int snd_pcm_dev_disconnect(struct snd_device *device)
 	list_del_init(&pcm->list);
 	for (cidx = 0; cidx < 2; cidx++)
 		for (substream = pcm->streams[cidx].substream; substream; substream = substream->next)
-			if (substream->runtime)
+			if (substream->runtime) {
 				substream->runtime->status->state = SNDRV_PCM_STATE_DISCONNECTED;
+				wake_up(&substream->runtime->sleep);
+				wake_up(&substream->runtime->tsleep);
+			}
 	list_for_each_entry(notify, &snd_pcm_notify_list, list) {
 		notify->n_disconnect(pcm);
 	}

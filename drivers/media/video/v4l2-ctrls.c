@@ -644,6 +644,14 @@ const char *v4l2_ctrl_get_name(u32 id)
 	case V4L2_CID_JPEG_COMPRESSION_QUALITY:	return "Compression Quality";
 	case V4L2_CID_JPEG_ACTIVE_MARKER:	return "Active Markers";
 
+	case V4L2_CID_SET_OUTPUT_MODE:		return "Rcu Output Mode";
+	case V4L2_CID_SET_OUTPUT_OFFSET:	return "Rcu Output Offset";
+	case V4L2_CID_SET_OUTPUT_PACK:		return "Rcu Output Pack";
+	case V4L2_CID_SET_OUTPUT_MERAM:		return "Rcu Output Meram";
+	case V4L2_CID_SET_OUTPUT_ISPTHINNED:	return "Rcu Output ISP Thread";
+	case V4L2_CID_SET_LED:				return "Rcu Output LED";
+	case V4L2_CID_SET_ZSL:				return "Rcu Output ZSL";
+
 	default:
 		return NULL;
 	}
@@ -1149,10 +1157,12 @@ static inline int handler_set_err(struct v4l2_ctrl_handler *hdl, int err)
 }
 
 /* Initialize the handler */
-int v4l2_ctrl_handler_init(struct v4l2_ctrl_handler *hdl,
-			   unsigned nr_of_controls_hint)
+int v4l2_ctrl_handler_init_class(struct v4l2_ctrl_handler *hdl,
+				 unsigned nr_of_controls_hint,
+				 struct lock_class_key *key, const char *name)
 {
 	mutex_init(&hdl->lock);
+	lockdep_set_class_and_name(&hdl->lock, key, name);
 	INIT_LIST_HEAD(&hdl->ctrls);
 	INIT_LIST_HEAD(&hdl->ctrl_refs);
 	hdl->nr_of_buckets = 1 + nr_of_controls_hint / 8;
@@ -1161,7 +1171,7 @@ int v4l2_ctrl_handler_init(struct v4l2_ctrl_handler *hdl,
 	hdl->error = hdl->buckets ? 0 : -ENOMEM;
 	return hdl->error;
 }
-EXPORT_SYMBOL(v4l2_ctrl_handler_init);
+EXPORT_SYMBOL(v4l2_ctrl_handler_init_class);
 
 /* Free all controls and control refs */
 void v4l2_ctrl_handler_free(struct v4l2_ctrl_handler *hdl)

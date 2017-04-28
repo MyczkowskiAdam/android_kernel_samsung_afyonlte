@@ -47,6 +47,9 @@ struct sh_mmcif_plat_data {
 	u8			sup_pclk;	/* 1 :SH7757, 0: SH7724/SH7372 */
 	unsigned long		caps;
 	u32			ocr;
+	u32			max_clk;
+	u32			buf_acc;
+	u32			dma_min_size;
 };
 
 #define MMCIF_CE_CMD_SET	0x00000000
@@ -67,6 +70,7 @@ struct sh_mmcif_plat_data {
 #define MMCIF_CE_HOST_STS1	0x00000048
 #define MMCIF_CE_HOST_STS2	0x0000004C
 #define MMCIF_CE_VERSION	0x0000007C
+#define MMCIF_CE_DELAY_SEL	0x00000080
 
 /* CE_BUF_ACC */
 #define BUF_ACC_DMAWEN		(1 << 25)
@@ -79,6 +83,7 @@ struct sh_mmcif_plat_data {
 #define CLK_ENABLE		(1 << 24) /* 1: output mmc clock */
 #define CLK_CLEAR		(0xf << 16)
 #define CLK_SUP_PCLK		(0xf << 16)
+#define CLKDIV_2        (0<<16) /* mmc clock frequency */
 #define CLKDIV_4		(1 << 16) /* mmc clock frequency.
 					   * n: bus clock/(2^(n+1)) */
 #define CLKDIV_256		(7 << 16) /* mmc clock frequency. (see above) */
@@ -116,7 +121,7 @@ static inline int sh_mmcif_boot_cmd_poll(void __iomem *base, unsigned long mask)
 	unsigned long tmp;
 	int cnt;
 
-	for (cnt = 0; cnt < 1000000; cnt++) {
+	for (cnt = 0; cnt < 5000000; cnt++) {
 		tmp = sh_mmcif_readl(base, MMCIF_CE_INT);
 		if (tmp & mask) {
 			sh_mmcif_writel(base, MMCIF_CE_INT, tmp & ~mask);

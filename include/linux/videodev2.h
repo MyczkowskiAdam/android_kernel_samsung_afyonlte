@@ -1,6 +1,9 @@
 /*
  *  Video for Linux Two header file
  *
+ * Copyright (C) 2012 Renesas Mobile Corp.
+ * All rights reserved.
+ * 
  *  Copyright (C) 1999-2007 the contributors
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -283,7 +286,30 @@ struct v4l2_capability {
 #define V4L2_CAP_ASYNCIO                0x02000000  /* async I/O */
 #define V4L2_CAP_STREAMING              0x04000000  /* streaming I/O ioctls */
 
-#define V4L2_CAP_DEVICE_CAPS            0x80000000  /* sets device capabilities field */
+#define V4L2_CAP_DEVICE_CAPS            0x80000000  /* sets device
+						     * capabilities field
+						     */
+
+#define V4L2_CID_SET_RESET		(V4L2_CID_PRIVATE_BASE+0x100)
+
+#define V4L2_CID_SET_OUTPUT_MODE	(V4L2_CID_PRIVATE_BASE+0x101)
+#define V4L2_CID_SET_OUTPUT_OFFSET	(V4L2_CID_PRIVATE_BASE+0x102)
+#define V4L2_CID_SET_OUTPUT_PACK	(V4L2_CID_PRIVATE_BASE+0x103)
+#define V4L2_CID_SET_OUTPUT_MERAM	(V4L2_CID_PRIVATE_BASE+0x104)
+#define V4L2_CID_SET_OUTPUT_ISPTHINNED	(V4L2_CID_PRIVATE_BASE+0x105)
+#define V4L2_CID_SET_LED		(V4L2_CID_PRIVATE_BASE+0x106)
+#define V4L2_CID_SET_ZSL		(V4L2_CID_PRIVATE_BASE+0x107)
+#define V4L2_CID_SET_MMAP_PAGE		(V4L2_CID_PRIVATE_BASE+0x108)
+#define V4L2_CID_SET_CAMSTS0		(V4L2_CID_PRIVATE_BASE+0x109)
+#define V4L2_CID_SET_CAMSTS1		(V4L2_CID_PRIVATE_BASE+0x10A)
+#define V4L2_CID_SET_SNDCMD		(V4L2_CID_PRIVATE_BASE+0x10B)
+
+
+#define V4L2_CID_GET_TUNING		(V4L2_CID_PRIVATE_BASE+0x201)
+#define V4L2_CID_GET_DUMP_SIZE_ALL	(V4L2_CID_PRIVATE_BASE+0x202)
+#define V4L2_CID_GET_DUMP_SIZE_USER	(V4L2_CID_PRIVATE_BASE+0x203)
+#define V4L2_CID_GET_CAMSTS0		(V4L2_CID_PRIVATE_BASE+0x204)
+#define V4L2_CID_GET_CAMSTS1		(V4L2_CID_PRIVATE_BASE+0x205)
 
 /*
  *	V I D E O   I M A G E   F O R M A T

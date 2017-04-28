@@ -26,6 +26,13 @@
 #include <linux/types.h>
 #include <linux/socket.h>
 
+
+/* Phonet media types */
+#define PN_MEDIA_ROUTING	0x00
+#define PN_MEDIA_USB		0x1B
+#define PN_MEDIA_DEFAULT	0x25
+#define PN_MEDIA_MODEM_HOST_IF  0x26
+
 /* Automatic protocol selection */
 #define PN_PROTO_TRANSPORT	0
 /* Phonet datagram socket */
@@ -44,12 +51,17 @@
 #define PNADDR_BROADCAST	0xFC
 #define PNPORT_RESOURCE_ROUTING	0
 
+/* define object for multicast */
+#define PNOBJECT_MULTICAST	0x20
+
 /* Values for PNPIPE_ENCAP option */
 #define PNPIPE_ENCAP_NONE	0
 #define PNPIPE_ENCAP_IP		1
 
 /* ioctls */
 #define SIOCPNGETOBJECT		(SIOCPROTOPRIVATE + 0)
+#define SIOCCONFIGTYPE		(SIOCPROTOPRIVATE + 1)
+#define SIOCCONFIGSUBTYPE	(SIOCPROTOPRIVATE + 2)
 #define SIOCPNENABLEPIPE	(SIOCPROTOPRIVATE + 13)
 #define SIOCPNADDRESOURCE	(SIOCPROTOPRIVATE + 14)
 #define SIOCPNDELRESOURCE	(SIOCPROTOPRIVATE + 15)
@@ -62,7 +74,7 @@ struct phonethdr {
 	__be16	pn_length;
 	__u8	pn_robj;
 	__u8	pn_sobj;
-} __attribute__((packed));
+} __packed;
 
 /* Common Phonet payload header */
 struct phonetmsg {
@@ -103,8 +115,8 @@ struct sockaddr_pn {
 	__u8 spn_obj;
 	__u8 spn_dev;
 	__u8 spn_resource;
-	__u8 spn_zero[sizeof(struct sockaddr) - sizeof(__kernel_sa_family_t) - 3];
-} __attribute__((packed));
+	__u8 spn_zero[sizeof(struct sockaddr) - sizeof(sa_family_t) - 3];
+} __packed;
 
 /* Well known address */
 #define PN_DEV_PC	0x10

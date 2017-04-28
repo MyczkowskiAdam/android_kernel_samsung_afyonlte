@@ -18,6 +18,8 @@
 
 #include <trace/events/irq.h>
 
+#include <memlog/memlog.h>
+
 #include "internals.h"
 
 /**
@@ -612,9 +614,11 @@ void handle_percpu_devid_irq(unsigned int irq, struct irq_desc *desc)
 	if (chip->irq_ack)
 		chip->irq_ack(&desc->irq_data);
 
+	memory_log_irq(irq,1);
 	trace_irq_handler_entry(irq, action);
 	res = action->handler(irq, dev_id);
 	trace_irq_handler_exit(irq, action, res);
+	memory_log_irq(irq,0);
 
 	if (chip->irq_eoi)
 		chip->irq_eoi(&desc->irq_data);

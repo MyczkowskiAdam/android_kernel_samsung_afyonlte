@@ -4,6 +4,7 @@
  * Copyright (c) 2003 Patrick Mochel
  * Copyright (c) 2003 Open Source Development Lab
  * Copyright (c) 2009 Rafael J. Wysocki <rjw@sisk.pl>, Novell Inc.
+ * Copyright (C) 2012 Renesas Mobile Corporation
  *
  * This file is released under the GPLv2.
  */
@@ -24,11 +25,20 @@
 #include <linux/export.h>
 #include <linux/suspend.h>
 #include <linux/syscore_ops.h>
+#include <linux/rtc.h>
 #include <trace/events/power.h>
+#include <mach/pm.h>
 
 #include "power.h"
 
+#ifdef CONFIG_SEC_GPIO_DVS
+#include <linux/secgpio_dvs.h>
+#endif
+
 const char *const pm_states[PM_SUSPEND_MAX] = {
+#ifdef CONFIG_EARLYSUSPEND
+	[PM_SUSPEND_ON]		= "on",
+#endif
 	[PM_SUSPEND_STANDBY]	= "standby",
 	[PM_SUSPEND_MEM]	= "mem",
 };
@@ -73,8 +83,18 @@ static int suspend_test(int level)
 {
 #ifdef CONFIG_PM_DEBUG
 	if (pm_test_level == level) {
+#if defined(CONFIG_ARCH_R8A7373) && defined(CONFIG_PM_TEST)
+#include <linux/time.h>
+		extern int wait_time;
+		unsigned long wait_time_jiffies = jiffies + (wait_time * HZ);
+		printk(KERN_INFO "%s: Waiting for %d seconds.\n", __func__, wait_time);
+		while ( time_before ( jiffies, wait_time_jiffies ) ) {
+			cpu_relax ( ) ;
+		}
+#else
 		printk(KERN_INFO "suspend debug: Waiting for 5 seconds.\n");
 		mdelay(5000);
+#endif /* CONFIG_ARCH_R8A7373 & CONFIG_PM_TEST */
 		return 1;
 	}
 #endif /* !CONFIG_PM_DEBUG */
@@ -136,6 +156,24 @@ static int suspend_enter(suspend_state_t state, bool *wakeup)
 {
 	int error;
 
+#ifdef CONFIG_SEC_GPIO_DVS
+	/************************ Caution !!! ****************************/
+	/* This function must be located in appropriate SLEEP position
+     * in accordance with the specification of each BB vendor.
+     */
+	/************************ Caution !!! ****************************/
+	gpio_dvs_check_sleepgpio();
+#ifdef SECGPIO_SLEEP_DEBUGGING
+	/************************ Caution !!! ****************************/
+	/* This func. must be located in an appropriate position for GPIO SLEEP debugging
+     * in accordance with the specification of each BB vendor, and 
+     * the func. must be called after calling the function "gpio_dvs_check_sleepgpio"
+     */
+	/************************ Caution !!! ****************************/
+	gpio_dvs_set_sleepgpio();
+#endif
+#endif
+
 	if (suspend_ops->prepare) {
 		error = suspend_ops->prepare();
 		if (error)
@@ -173,6 +211,15 @@ static int suspend_enter(suspend_state_t state, bool *wakeup)
 		}
 		syscore_resume();
 	}
+#if defined(CONFIG_SEC_GPIO_DVS) && defined(SECGPIO_SLEEP_DEBUGGING)
+	/************************ Caution !!! ****************************/
+	/* This function must be located in an appropriate position
+	 * to undo gpio SLEEP debugging setting when DUT wakes up.
+	 * It should be implemented in accordance with the specification of each BB vendor.
+	 */
+	/************************ Caution !!! ****************************/
+	gpio_dvs_undo_sleepgpio();
+#endif
 
 	arch_suspend_enable_irqs();
 	BUG_ON(irqs_disabled());
@@ -265,7 +312,7 @@ static void suspend_finish(void)
  * Fail if that's not the case.  Otherwise, prepare for system suspend, make the
  * system enter the given sleep state and clean up after wakeup.
  */
-static int enter_state(suspend_state_t state)
+int enter_state(suspend_state_t state)
 {
 	int error;
 
@@ -275,11 +322,9 @@ static int enter_state(suspend_state_t state)
 	if (!mutex_trylock(&pm_mutex))
 		return -EBUSY;
 
-	printk(KERN_INFO "PM: Syncing filesystems ... ");
-	sys_sync();
-	printk("done.\n");
+	suspend_sys_sync_queue();
 
-	pr_debug("PM: Preparing system for %s sleep\n", pm_states[state]);
+	printk(KERN_INFO "PM: Preparing system for %s sleep\n", pm_states[state]);
 	error = suspend_prepare();
 	if (error)
 		goto Unlock;
@@ -287,7 +332,7 @@ static int enter_state(suspend_state_t state)
 	if (suspend_test(TEST_FREEZER))
 		goto Finish;
 
-	pr_debug("PM: Entering %s sleep\n", pm_states[state]);
+	printk(KERN_INFO "PM: Entering %s sleep\n", pm_states[state]);
 	pm_restrict_gfp_mask();
 	error = suspend_devices_and_enter(state);
 	pm_restore_gfp_mask();
@@ -300,6 +345,20 @@ static int enter_state(suspend_state_t state)
 	return error;
 }
 
+#if 0
+static void pm_suspend_marker(char *annotation)
+{
+	struct timespec ts;
+	struct rtc_time tm;
+
+	getnstimeofday(&ts);
+	rtc_time_to_tm(ts.tv_sec, &tm);
+	pr_info("PM: suspend %s %d-%02d-%02d %02d:%02d:%02d.%09lu UTC\n",
+		annotation, tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+		tm.tm_hour, tm.tm_min, tm.tm_sec, ts.tv_nsec);
+}
+#endif
+
 /**
  * pm_suspend - Externally visible function for suspending the system.
  * @state: System sleep state to enter.
@@ -309,18 +368,31 @@ static int enter_state(suspend_state_t state)
  */
 int pm_suspend(suspend_state_t state)
 {
-	int error;
+#ifdef CONFIG_PM_TEST
+	int ret;
+	extern int for_kernel_test;
+#endif
 
-	if (state <= PM_SUSPEND_ON || state >= PM_SUSPEND_MAX)
-		return -EINVAL;
-
-	error = enter_state(state);
-	if (error) {
-		suspend_stats.fail++;
-		dpm_save_failed_errno(error);
-	} else {
-		suspend_stats.success++;
+#ifdef CONFIG_PM_DEBUG
+	if (is_systemsuspend_enable() == 0){
+		pr_debug("\nSystem Suspend is not available at this moment\n\n");
+		return 0;
 	}
-	return error;
+#endif	/* CONFIG_PM_DEBUG */
+	if (state > PM_SUSPEND_ON && state < PM_SUSPEND_MAX)
+#ifndef CONFIG_PM_TEST
+		return enter_state(state);
+#else	/* CONFIG_PM_TEST is defined */
+	{
+		ret = enter_state(state);
+		if (for_kernel_test == 1) {
+			/* Execute late resume */
+			request_suspend_state(PM_SUSPEND_ON);
+		}
+
+		return ret;
+	}
+#endif /* CONFIG_PM_TEST */
+	return -EINVAL;
 }
 EXPORT_SYMBOL(pm_suspend);

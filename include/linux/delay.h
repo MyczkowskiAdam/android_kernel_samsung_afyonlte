@@ -9,6 +9,8 @@
 
 #include <linux/kernel.h>
 
+#define EOS_PF_BOGO_MIPS_FIX_REQUIRED		100
+extern unsigned long lpj_zclk;
 extern unsigned long loops_per_jiffy;
 
 #include <asm/delay.h>

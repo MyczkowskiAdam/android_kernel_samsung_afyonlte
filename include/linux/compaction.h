@@ -1,3 +1,10 @@
+/*
+ * include/linux/compaction.h
+ *
+ * Copyright (C) 2012 Renesas Mobile Corporation
+ *
+ */
+
 #ifndef _LINUX_COMPACTION_H
 #define _LINUX_COMPACTION_H
 
@@ -25,6 +32,9 @@ extern unsigned long try_to_compact_pages(struct zonelist *zonelist,
 			bool sync);
 extern int compact_pgdat(pg_data_t *pgdat, int order);
 extern unsigned long compaction_suitable(struct zone *zone, int order);
+extern unsigned long compact_zone_order(struct zone *zone, int order,
+					gfp_t gfp_mask, bool sync);
+extern int compact_nodes(void);
 
 /* Do not skip compaction more than 64 times */
 #define COMPACT_MAX_DEFER_SHIFT 6

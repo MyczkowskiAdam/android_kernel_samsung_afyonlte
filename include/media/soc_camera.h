@@ -59,7 +59,7 @@ struct soc_camera_device {
 struct soc_camera_host {
 	struct v4l2_device v4l2_dev;
 	struct list_head list;
-	struct mutex host_lock;		/* Protect during probing */
+	struct mutex host_lock;		/* Protect pipeline modifications */
 	unsigned char nr;		/* Host number */
 	void *priv;
 	const char *drv_name;
@@ -96,6 +96,8 @@ struct soc_camera_host_ops {
 	int (*reqbufs)(struct soc_camera_device *, struct v4l2_requestbuffers *);
 	int (*querycap)(struct soc_camera_host *, struct v4l2_capability *);
 	int (*set_bus_param)(struct soc_camera_device *);
+	int (*get_ctrl)(struct soc_camera_device *, struct v4l2_control *);
+	int (*set_ctrl)(struct soc_camera_device *, struct v4l2_control *);
 	int (*get_parm)(struct soc_camera_device *, struct v4l2_streamparm *);
 	int (*set_parm)(struct soc_camera_device *, struct v4l2_streamparm *);
 	int (*enum_fsizes)(struct soc_camera_device *, struct v4l2_frmsizeenum *);
@@ -288,4 +290,8 @@ static inline u32 soc_camera_grp_id(const struct soc_camera_device *icd)
 void soc_camera_lock(struct vb2_queue *vq);
 void soc_camera_unlock(struct vb2_queue *vq);
 
+extern bool cam_class_init;
+extern struct class *camera_class; /* /sys/class/camera */
+extern struct device *sec_main_cam_dev; /* /sys/class/camera/rear/rear_type */
+extern struct device *sec_sub_cam_dev; /* /sys/class/camera/rear/rear_type */
 #endif

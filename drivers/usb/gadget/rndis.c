@@ -40,7 +40,7 @@
 #undef	VERBOSE_DEBUG
 
 #include "rndis.h"
-
+#include "u_ether.h"
 
 /* The driver for your USB chip needs to support ep0 OUT to work with
  * RNDIS, plus all three CDC Ethernet endpoints (interrupt not optional).
@@ -157,7 +157,6 @@ static const u32 oid_supported_list[] =
 #endif	/* RNDIS_WAKEUP */
 #endif	/* RNDIS_PM */
 };
-
 
 /* NDIS Functions */
 static int gen_ndis_query_resp(int configNr, u32 OID, u8 *buf,
@@ -585,6 +584,15 @@ static int rndis_init_response(int configNr, rndis_init_msg_type *buf)
 	resp->MinorVersion = cpu_to_le32(RNDIS_MINOR_VERSION);
 	resp->DeviceFlags = cpu_to_le32(RNDIS_DF_CONNECTIONLESS);
 	resp->Medium = cpu_to_le32(RNDIS_MEDIUM_802_3);
+#if RNDIS_UL_MULTIFRAME_SUPPORT > 0
+	resp->MaxPacketsPerTransfer = cpu_to_le32(RNDIS_UL_MULTIFRAME_SUPPORT);
+	resp->MaxTransferSize = cpu_to_le32( RNDIS_UL_MULTIFRAME_SUPPORT * (
+		  params->dev->mtu
+		+ sizeof(struct ethhdr)
+		+ sizeof(struct rndis_packet_msg_type)
+		+ 22));
+	resp->PacketAlignmentFactor = cpu_to_le32(RNDIS_FRAME_BYTE_ALIGMENT);
+#else
 	resp->MaxPacketsPerTransfer = cpu_to_le32(1);
 	resp->MaxTransferSize = cpu_to_le32(
 		  params->dev->mtu
@@ -592,6 +600,7 @@ static int rndis_init_response(int configNr, rndis_init_msg_type *buf)
 		+ sizeof(struct rndis_packet_msg_type)
 		+ 22);
 	resp->PacketAlignmentFactor = cpu_to_le32(0);
+#endif
 	resp->AFListOffset = cpu_to_le32(0);
 	resp->AFListSize = cpu_to_le32(0);
 
@@ -683,9 +692,15 @@ static int rndis_set_response(int configNr, rndis_set_msg_type *buf)
 
 static int rndis_reset_response(int configNr, rndis_reset_msg_type *buf)
 {
+	u8 *buffer;
+	u32 length;
 	rndis_reset_cmplt_type *resp;
 	rndis_resp_t *r;
 	struct rndis_params *params = rndis_per_dev_params + configNr;
+
+	/* drain the response queue */
+	while ((buffer = rndis_get_next_response(configNr, &length)))
+		rndis_free_response(configNr, buffer);
 
 	r = rndis_add_response(configNr, sizeof(rndis_reset_cmplt_type));
 	if (!r)
@@ -798,7 +813,7 @@ int rndis_msg_parser(u8 configNr, u8 *buf)
 	u32 MsgType, MsgLength;
 	__le32 *tmp;
 	struct rndis_params *params;
-
+	struct eth_dev	*dev;
 	if (!buf)
 		return -ENOMEM;
 
@@ -809,6 +824,7 @@ int rndis_msg_parser(u8 configNr, u8 *buf)
 	if (configNr >= RNDIS_MAX_CONFIGS)
 		return -ENOTSUPP;
 	params = &rndis_per_dev_params[configNr];
+	dev = netdev_priv(params->dev);
 
 	/* NOTE: RNDIS is *EXTREMELY* chatty ... Windows constantly polls for
 	 * rx/tx statistics and link status, in addition to KEEPALIVE traffic
@@ -821,6 +837,7 @@ int rndis_msg_parser(u8 configNr, u8 *buf)
 		pr_debug("%s: REMOTE_NDIS_INITIALIZE_MSG\n",
 			__func__);
 		params->state = RNDIS_INITIALIZED;
+		dev->max_host_transfer_size = get_unaligned_le32(tmp+3);
 		return rndis_init_response(configNr,
 					(rndis_init_msg_type *)buf);
 
@@ -1023,6 +1040,72 @@ static rndis_resp_t *rndis_add_response(int configNr, u32 length)
 	return r;
 }
 
+#if RNDIS_UL_MULTIFRAME_SUPPORT > 0
+
+int rndis_rm_hdr(struct gether *port,
+			struct sk_buff *skb,
+			struct sk_buff_head *list)
+{
+	/* tmp points to a struct rndis_packet_msg_type */
+	__le32 *tmp = (void *)skb->data;
+	struct sk_buff *newskb;
+	u32 MessageLength;
+	u32 ActualLength = 0;
+	u32 BytesUnwrapped = 0;
+
+	/* MessageType, MessageLength */
+	if (cpu_to_le32(REMOTE_NDIS_PACKET_MSG)
+			!= get_unaligned(tmp++)) {
+		dev_kfree_skb_any(skb);
+		return -EINVAL;
+	}
+	ActualLength = skb->len;
+NextFrame:
+
+	newskb = NULL;
+	MessageLength = get_unaligned_le32(tmp++);
+
+	newskb = skb_clone(skb, GFP_ATOMIC);
+
+	if (unlikely(!newskb)) {
+		dev_kfree_skb_any(skb);
+		return 0;
+	}
+
+	/* DataOffset, DataLength */
+	if (!skb_pull(newskb, get_unaligned_le32(tmp++) + 8)) {
+		dev_kfree_skb_any(newskb);
+		dev_kfree_skb_any(skb);
+		return -EOVERFLOW;
+	}
+
+	/* Reset the pointer to the network header */
+	skb_reset_network_header(newskb);
+	/* give the correct skb->len from the rndis header */
+	newskb->len = get_unaligned_le32(tmp++);
+	/* Set the correct truesize so that the socket buffers
+		don't get confused */
+	newskb->truesize = newskb->len + sizeof(struct sk_buff);
+	/* Set the correct tail pointer */
+	skb_set_tail_pointer(newskb, newskb->len);
+
+	tmp = (__le32 *)(((u8 *)tmp) + (MessageLength - 4 * 4));
+
+	BytesUnwrapped = BytesUnwrapped + MessageLength;
+
+	if ((BytesUnwrapped < ActualLength) &&
+		cpu_to_le32(REMOTE_NDIS_PACKET_MSG)
+		== get_unaligned_le32(tmp++)) {
+		skb_queue_tail(list, newskb);
+		skb->data = (unsigned char *)(((u8 *)tmp) - 4);
+		goto NextFrame;
+	}
+
+	skb_queue_tail(list, newskb);
+	dev_kfree_skb_any(skb);
+	return 0;
+}
+#else
 int rndis_rm_hdr(struct gether *port,
 			struct sk_buff *skb,
 			struct sk_buff_head *list)
@@ -1048,6 +1131,7 @@ int rndis_rm_hdr(struct gether *port,
 	skb_queue_tail(list, skb);
 	return 0;
 }
+#endif
 
 #ifdef CONFIG_USB_GADGET_DEBUG_FILES
 
@@ -1146,10 +1230,14 @@ static struct proc_dir_entry *rndis_connect_state [RNDIS_MAX_CONFIGS];
 
 #endif /* CONFIG_USB_GADGET_DEBUG_FILES */
 
+static bool rndis_initialized;
 
 int rndis_init(void)
 {
 	u8 i;
+
+	if (rndis_initialized)
+		return 0;
 
 	for (i = 0; i < RNDIS_MAX_CONFIGS; i++) {
 #ifdef	CONFIG_USB_GADGET_DEBUG_FILES
@@ -1177,6 +1265,7 @@ int rndis_init(void)
 		INIT_LIST_HEAD(&(rndis_per_dev_params[i].resp_queue));
 	}
 
+	rndis_initialized = true;
 	return 0;
 }
 
@@ -1185,7 +1274,13 @@ void rndis_exit(void)
 #ifdef CONFIG_USB_GADGET_DEBUG_FILES
 	u8 i;
 	char name[20];
+#endif
 
+	if (!rndis_initialized)
+		return;
+	rndis_initialized = false;
+
+#ifdef CONFIG_USB_GADGET_DEBUG_FILES
 	for (i = 0; i < RNDIS_MAX_CONFIGS; i++) {
 		sprintf(name, NAME_TEMPLATE, i);
 		remove_proc_entry(name, NULL);

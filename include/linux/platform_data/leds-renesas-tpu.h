@@ -8,6 +8,7 @@ struct led_renesas_tpu_config {
 	unsigned int channel_offset;
 	unsigned int timer_bit;
 	unsigned int max_brightness;
+	unsigned int init_brightness;
 	unsigned int refresh_rate;
 };
 
